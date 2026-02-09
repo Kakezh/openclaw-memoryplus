@@ -1,0 +1,20 @@
+{
+  "name": "@openclaw/memory-skill-miner",
+  "version": "2026.2.1",
+  "description": "OpenClaw automatic skill discovery and generation from conversation patterns",
+  "type": "module",
+  "dependencies": {
+    "@sinclair/typebox": "0.34.48"
+  },
+  "devDependencies": {
+    "openclaw": "workspace:*"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.1.26"
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}
