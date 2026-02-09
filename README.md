@@ -1,6 +1,6 @@
 # OpenClaw Memory+ 改进文档
 
-> 基于 AMemGym 论文和 Workspace Memory v2 规范的智能记忆系统增强（采用vibe coding辅助快速开发，由于本人memory数据和资金缺乏，难以进行规模化、结构化的测试，欢迎大家与我交流、合作，迭代出完成度更高的作品）
+> 基于 AMemGym 论文和 Workspace Memory v2 规范的智能记忆系统增强（采用vibe coding辅助快速开发，由于本人memory数据缺乏，难以进行规模化、结构化的测试，欢迎大家与我交流、合作，迭代出完成度更高的作品）
 
 ## 📋 项目概述
 
