@@ -11,8 +11,9 @@
  */
 
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
-import type { AgentTool } from "@mariozechner/pi-agent-core";
+import type { AgentTool, AgentToolResult, TextContent } from "@mariozechner/pi-agent-core";
 import { Type } from "@sinclair/typebox";
+import type { Static } from "@sinclair/typebox";
 import type {
   MemoryXConfig,
   MemoryHierarchy,
@@ -78,6 +79,19 @@ const hierarchy: MemoryHierarchy = {
 
 const discoveredSkills: Map<string, PotentialSkill> = new Map();
 
+// Helper: Create text content for AgentToolResult
+function createTextContent(text: string): TextContent[] {
+  return [{ type: "text", text }];
+}
+
+// Helper: Create AgentToolResult
+function createToolResult<T>(details: T): AgentToolResult<T> {
+  return {
+    content: createTextContent(JSON.stringify(details)),
+    details,
+  };
+}
+
 const memoryXPlugin = {
   id: "memory-x",
   name: "Memory-X",
@@ -85,7 +99,6 @@ const memoryXPlugin = {
   kind: "memory" as const,
 
   register(api: OpenClawPluginApi) {
-    // Use api.logger instead of api.runtime.logging.getSubsystemLogger
     const logger = api.logger;
 
     api.registerTool(
@@ -93,38 +106,41 @@ const memoryXPlugin = {
         const config: MemoryXConfig = { ...DEFAULT_CONFIG, ...ctx.config };
 
         // Tool 1: memory_remember - Unified write entry
-        const rememberTool: AgentTool = {
+        const rememberParamsSchema = Type.Object({
+          content: Type.String(),
+          type: Type.Enum({
+            fact: "fact",
+            preference: "preference",
+            goal: "goal",
+            constraint: "constraint",
+            event: "event",
+          }),
+          confidence: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })),
+          entities: Type.Optional(Type.Array(Type.String())),
+          isFactual: Type.Optional(Type.Boolean()),
+        });
+
+        type RememberParams = Static<typeof rememberParamsSchema>;
+        type RememberResult = {
+          success: boolean;
+          ids: {
+            original: string;
+            episode: string;
+            semantic: string;
+            theme: string;
+          };
+        };
+
+        const rememberTool: AgentTool<typeof rememberParamsSchema, RememberResult> = {
           name: "memory_remember",
+          label: "Remember",
           description: "Store a memory with automatic hierarchy classification",
-          parameters: Type.Object({
-            content: Type.String(),
-            type: Type.Enum({
-              fact: "fact",
-              preference: "preference",
-              goal: "goal",
-              constraint: "constraint",
-              event: "event",
-            }),
-            confidence: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })),
-            entities: Type.Optional(Type.Array(Type.String())),
-            isFactual: Type.Optional(Type.Boolean()),
-          }),
-          returns: Type.Object({
-            success: Type.Boolean(),
-            ids: Type.Object({
-              original: Type.String(),
-              episode: Type.String(),
-              semantic: Type.String(),
-              theme: Type.String(),
-            }),
-          }),
-          async execute(params: {
-            content: string;
-            type: "fact" | "preference" | "goal" | "constraint" | "event";
-            confidence?: number;
-            entities?: string[];
-            isFactual?: boolean;
-          }) {
+          parameters: rememberParamsSchema,
+          async execute(
+            _toolCallId: string,
+            params: RememberParams,
+            _signal?: AbortSignal
+          ): Promise<AgentToolResult<RememberResult>> {
             try {
               const timestamp = Date.now();
               const sessionId = ctx.sessionKey || "default";
@@ -176,7 +192,7 @@ const memoryXPlugin = {
 
               logger.info(`Memory stored at all 4 levels: ${original.id}`);
 
-              return {
+              return createToolResult({
                 success: true,
                 ids: {
                   original: original.id,
@@ -184,7 +200,7 @@ const memoryXPlugin = {
                   semantic: semantic.id,
                   theme: theme.id,
                 },
-              };
+              });
             } catch (error) {
               logger.error(`Failed to remember: ${error}`);
               throw error;
@@ -193,32 +209,37 @@ const memoryXPlugin = {
         };
 
         // Tool 2: memory_recall - Top-down retrieval
-        const recallTool: AgentTool = {
+        const recallParamsSchema = Type.Object({
+          query: Type.String(),
+          maxTokens: Type.Optional(Type.Number({ default: 4000 })),
+        });
+
+        type RecallParams = Static<typeof recallParamsSchema>;
+        type RecallResult = {
+          evidence: {
+            themes: { id: string; name: string }[];
+            semantics: { id: string; content: string }[];
+            episodes: { id: string; summary: string }[];
+          };
+          metrics: {
+            totalTokens: number;
+            evidenceDensity: number;
+          };
+        };
+
+        const recallTool: AgentTool<typeof recallParamsSchema, RecallResult> = {
           name: "memory_recall",
+          label: "Recall",
           description: "Retrieve memories using top-down hierarchy traversal",
-          parameters: Type.Object({
-            query: Type.String(),
-            maxTokens: Type.Optional(Type.Number({ default: 4000 })),
-          }),
-          returns: Type.Object({
-            evidence: Type.Object({
-              themes: Type.Array(Type.Object({ id: Type.String(), name: Type.String() })),
-              semantics: Type.Array(Type.Object({ id: Type.String(), content: Type.String() })),
-              episodes: Type.Array(Type.Object({ id: Type.String(), summary: Type.String() })),
-            }),
-            metrics: Type.Object({
-              totalTokens: Type.Number(),
-              evidenceDensity: Type.Number(),
-            }),
-          }),
-          async execute({
-            query,
-            maxTokens = 4000,
-          }: {
-            query: string;
-            maxTokens?: number;
-          }) {
+          parameters: recallParamsSchema,
+          async execute(
+            _toolCallId: string,
+            params: RecallParams,
+            _signal?: AbortSignal
+          ): Promise<AgentToolResult<RecallResult>> {
             try {
+              const { query, maxTokens = 4000 } = params;
+
               // Stage 1: Select themes (simplified - keyword matching)
               const themes = Array.from(hierarchy.themes.values())
                 .filter((t) =>
@@ -254,7 +275,7 @@ const memoryXPlugin = {
                 episodes.map((e) => e.summary).join(" ")
               );
 
-              return {
+              return createToolResult({
                 evidence: {
                   themes: themes.map((t) => ({ id: t.id, name: t.name })),
                   semantics: semantics.map((s) => ({ id: s.id, content: s.content })),
@@ -264,7 +285,7 @@ const memoryXPlugin = {
                   totalTokens,
                   evidenceDensity: semantics.length / Math.max(1, totalTokens / 100),
                 },
-              };
+              });
             } catch (error) {
               logger.error(`Failed to recall: ${error}`);
               throw error;
@@ -273,19 +294,26 @@ const memoryXPlugin = {
         };
 
         // Tool 3: memory_reflect - Pattern discovery
-        const reflectTool: AgentTool = {
+        const reflectParamsSchema = Type.Object({});
+        type ReflectResult = {
+          patterns: {
+            themeId: string;
+            themeName: string;
+            occurrenceCount: number;
+            suggestedSkill: string;
+          }[];
+        };
+
+        const reflectTool: AgentTool<typeof reflectParamsSchema, ReflectResult> = {
           name: "memory_reflect",
+          label: "Reflect",
           description: "Scan memory hierarchy to discover patterns and skills",
-          parameters: Type.Object({}),
-          returns: Type.Object({
-            patterns: Type.Array(Type.Object({
-              themeId: Type.String(),
-              themeName: Type.String(),
-              occurrenceCount: Type.Number(),
-              suggestedSkill: Type.String(),
-            })),
-          }),
-          async execute() {
+          parameters: reflectParamsSchema,
+          async execute(
+            _toolCallId: string,
+            _params: Static<typeof reflectParamsSchema>,
+            _signal?: AbortSignal
+          ): Promise<AgentToolResult<ReflectResult>> {
             const patterns = [];
             for (const theme of hierarchy.themes.values()) {
               if (theme.semanticIds.length >= config.skills.minThemeFrequency) {
@@ -297,26 +325,33 @@ const memoryXPlugin = {
                 });
               }
             }
-            return { patterns };
+            return createToolResult({ patterns });
           },
         };
 
         // Tool 4: memory_introspect - Diagnostics
-        const introspectTool: AgentTool = {
+        const introspectParamsSchema = Type.Object({});
+        type IntrospectResult = {
+          hierarchy: {
+            originals: number;
+            episodes: number;
+            semantics: number;
+            themes: number;
+          };
+          health: string;
+        };
+
+        const introspectTool: AgentTool<typeof introspectParamsSchema, IntrospectResult> = {
           name: "memory_introspect",
+          label: "Introspect",
           description: "Get memory system diagnostics",
-          parameters: Type.Object({}),
-          returns: Type.Object({
-            hierarchy: Type.Object({
-              originals: Type.Number(),
-              episodes: Type.Number(),
-              semantics: Type.Number(),
-              themes: Type.Number(),
-            }),
-            health: Type.String(),
-          }),
-          async execute() {
-            return {
+          parameters: introspectParamsSchema,
+          async execute(
+            _toolCallId: string,
+            _params: Static<typeof introspectParamsSchema>,
+            _signal?: AbortSignal
+          ): Promise<AgentToolResult<IntrospectResult>> {
+            return createToolResult({
               hierarchy: {
                 originals: hierarchy.originals.size,
                 episodes: hierarchy.episodes.size,
@@ -324,26 +359,30 @@ const memoryXPlugin = {
                 themes: hierarchy.themes.size,
               },
               health: "healthy",
-            };
+            });
           },
         };
 
         // Tool 5: memory_consolidate - Memory evolution
-        const consolidateTool: AgentTool = {
+        const consolidateParamsSchema = Type.Object({
+          action: Type.Enum({ merge: "merge", split: "split", resolve: "resolve" }),
+          targetIds: Type.Array(Type.String()),
+        });
+
+        type ConsolidateParams = Static<typeof consolidateParamsSchema>;
+        type ConsolidateResult = { success: boolean };
+
+        const consolidateTool: AgentTool<typeof consolidateParamsSchema, ConsolidateResult> = {
           name: "memory_consolidate",
+          label: "Consolidate",
           description: "Consolidate memories: merge similar themes, resolve conflicts",
-          parameters: Type.Object({
-            action: Type.Enum({ merge: "merge", split: "split", resolve: "resolve" }),
-            targetIds: Type.Array(Type.String()),
-          }),
-          returns: Type.Object({ success: Type.Boolean() }),
-          async execute({
-            action,
-            targetIds,
-          }: {
-            action: "merge" | "split" | "resolve";
-            targetIds: string[];
-          }) {
+          parameters: consolidateParamsSchema,
+          async execute(
+            _toolCallId: string,
+            params: ConsolidateParams,
+            _signal?: AbortSignal
+          ): Promise<AgentToolResult<ConsolidateResult>> {
+            const { action, targetIds } = params;
             if (action === "merge" && targetIds.length >= 2) {
               // Simplified merge: combine semantics from multiple themes
               const targetTheme = hierarchy.themes.get(targetIds[0]);
@@ -358,36 +397,50 @@ const memoryXPlugin = {
                 hierarchy.themes.set(targetTheme.id, targetTheme);
               }
             }
-            return { success: true };
+            return createToolResult({ success: true });
           },
         };
 
         // Tool 6: memory_status - Statistics
-        const statusTool: AgentTool = {
+        const statusParamsSchema = Type.Object({});
+        type StatusResult = {
+          stats: {
+            totalMemories: number;
+            themeDistribution: Record<string, number>;
+          };
+        };
+
+        const statusTool: AgentTool<typeof statusParamsSchema, StatusResult> = {
           name: "memory_status",
+          label: "Status",
           description: "Get memory system statistics",
-          parameters: Type.Object({}),
-          returns: Type.Object({
-            stats: Type.Object({
-              totalMemories: Type.Number(),
-              themeDistribution: Type.Record(Type.String(), Type.Number()),
-            }),
-          }),
-          async execute() {
+          parameters: statusParamsSchema,
+          async execute(
+            _toolCallId: string,
+            _params: Static<typeof statusParamsSchema>,
+            _signal?: AbortSignal
+          ): Promise<AgentToolResult<StatusResult>> {
             const themeDistribution: Record<string, number> = {};
             for (const theme of hierarchy.themes.values()) {
               themeDistribution[theme.name] = theme.semanticIds.length;
             }
-            return {
+            return createToolResult({
               stats: {
                 totalMemories: hierarchy.originals.size,
                 themeDistribution,
               },
-            };
+            });
           },
         };
 
-        return [rememberTool, recallTool, reflectTool, introspectTool, consolidateTool, statusTool];
+        return [
+          rememberTool,
+          recallTool,
+          reflectTool,
+          introspectTool,
+          consolidateTool,
+          statusTool,
+        ];
       },
       { names: ["memory_remember", "memory_recall", "memory_reflect", "memory_introspect", "memory_consolidate", "memory_status"] }
     );
