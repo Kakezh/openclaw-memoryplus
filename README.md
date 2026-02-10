@@ -1,61 +1,61 @@
-# OpenClaw Memory+ 改进文档
+# OpenClaw Memory+ Enhancement Documentation
 
-> 基于 AMemGym 论文和 Workspace Memory v2 规范的智能记忆系统增强（欢迎大家与我交流、合作，迭代出完成度更高的作品）
+> Intelligent memory system enhancement based on AMemGym paper and Workspace Memory v2 specification (Welcome to communicate and collaborate with me to iterate a more complete work)
 
-## 📋 项目概述
+## 📋 Project Overview
 
-本项目是对 [OpenClaw](https://github.com/openclaw) 记忆系统的改进，通过引入三个可插拔扩展，目的是实现智能记忆管理的范式。
+This project is an improvement to the [OpenClaw](https://github.com/openclaw) memory system, aiming to achieve a paradigm of intelligent memory management by introducing three pluggable extensions.
 
-### 原项目记忆系统
+### Original Project Memory System
 
-OpenClaw 原有的记忆系统（`memory-core` 和 `memory-lancedb`）有一定优化空间：
+The original OpenClaw memory system (`memory-core` and `memory-lancedb`) has room for optimization:
 
-1. **结构化**: 仅支持简单的 Markdown 分块索引，没有语义类型区分
-2. **智能决策**: 对重要信息的区分能力不够
-3. **诊断能力**: 对记忆写入/读取/利用的失败原因分析不足
-4. **自我进化**: 记忆策略固定，无法根据使用效果自动优化
-5. **Skill 与记忆**: Skills 和记忆系统各自独立，无法相互增强
-6. **自动发现**: 无法从会话历史中自动发现可复用的模式
+1. **Structuring**: Only supports simple Markdown chunk indexing without semantic type differentiation
+2. **Intelligent Decision-Making**: Insufficient ability to distinguish important information
+3. **Diagnostic Capability**: Insufficient analysis of failure reasons for memory write/read/utilization
+4. **Self-Evolution**: Fixed memory strategy, unable to automatically optimize based on usage effectiveness
+5. **Skill and Memory**: Skills and memory systems are independent and cannot enhance each other
+6. **Automatic Discovery**: Unable to automatically discover reusable patterns from conversation history
 
 ---
 
-## 🏗️ 改进架构
+## 🏗️ Improved Architecture
 
 ```
 extensions/
-├── memory-core/              # 原有：基础记忆搜索
-├── memory-lancedb/           # 原有：LanceDB 向量存储
-├── memory-bank/              # 【新增】Workspace Memory v2
-├── memory-amem/              # 【新增】AMemGym 智能记忆
-└── memory-skill-miner/       # 【新增】Skill 自动发现
+├── memory-core/              # Original: Basic memory search
+├── memory-lancedb/           # Original: LanceDB vector storage
+├── memory-bank/              # [New] Workspace Memory v2
+├── memory-amem/              # [New] AMemGym intelligent memory
+└── memory-skill-miner/       # [New] Skill automatic discovery
 ```
 
 ---
 
-## 📦 扩展 1: memory-bank (Workspace Memory v2)
+## 📦 Extension 1: memory-bank (Workspace Memory v2)
 
-### 功能特性
+### Features
 
-#### 1.1 结构化记忆目录
+#### 1.1 Structured Memory Directory
 
 ```
 ~/.openclaw/workspace/
-├── memory.md                 # 核心持久事实（已支持）
+├── memory.md                 # Core persistent facts (supported)
 ├── memory/
-│   └── YYYY-MM-DD.md        # 每日日志（已支持）
-└── bank/                     # 【新增】类型化记忆
-    ├── world.md             # 客观世界事实
-    ├── experience.md        # Agent 经历
-    ├── opinions.md          # 主观意见 + 置信度
+│   └── YYYY-MM-DD.md        # Daily logs (supported)
+└── bank/                     # [New] Typed memory
+    ├── world.md             # Objective world facts
+    ├── experience.md        # Agent experiences
+    ├── opinions.md          # Subjective opinions + confidence
     └── entities/
         ├── Peter.md
         ├── The-Castle.md
         └── warelay.md
 ```
 
-#### 1.2 ## Retain 解析器
+#### 1.2 ## Retain Parser
 
-支持解析每日日志中的结构化记忆条目：
+Supports parsing structured memory entries from daily logs:
 
 ```markdown
 ## Retain
@@ -64,16 +64,16 @@ extensions/
 - O(c=0.95) @Peter: Prefers concise replies (<1500 chars) on WhatsApp.
 ```
 
-**类型标记**:
-- `W`: World - 客观世界事实
-- `B`: Biographical/Experience - Agent 经历
-- `O(c=0.x)`: Opinion - 主观意见（带置信度）
-- `S`: Summary - 摘要/观察
-- `@Entity`: 实体引用
+**Type Markers**:
+- `W`: World - Objective world facts
+- `B`: Biographical/Experience - Agent experiences
+- `O(c=0.x)`: Opinion - Subjective opinions (with confidence)
+- `S`: Summary - Summary/observation
+- `@Entity`: Entity reference
 
-#### 1.3 实体页面管理
+#### 1.3 Entity Page Management
 
-自动创建和管理实体页面，聚合相关信息：
+Automatically create and manage entity pages, aggregating relevant information:
 
 ```markdown
 # Peter
@@ -85,61 +85,61 @@ Summary of Peter...
 - Prefers concise replies on WhatsApp
 ```
 
-### 实现文件
+### Implementation Files
 
-| 文件 | 功能 |
-|------|------|
-| `types.ts` | 类型定义（BankStructure, ParsedMemoryEntry, OpinionEntry） |
-| `parser.ts` | ## Retain 解析器，支持类型标记和实体提取 |
-| `bank-manager.ts` | Bank 目录管理，实体页面 CRUD |
-| `index.ts` | 插件入口，注册工具和 CLI 命令 |
+| File | Function |
+|------|----------|
+| `types.ts` | Type definitions (BankStructure, ParsedMemoryEntry, OpinionEntry) |
+| `parser.ts` | ## Retain parser, supports type markers and entity extraction |
+| `bank-manager.ts` | Bank directory management, entity page CRUD |
+| `index.ts` | Plugin entry, registers tools and CLI commands |
 
-### Agent 工具
+### Agent Tools
 
-- `bank_parse_retain`: 解析 ## Retain 章节
-- `bank_update_entity`: 创建/更新实体页面
-- `bank_read_entity`: 读取实体页面
-- `bank_append`: 追加到 bank 文件
-- `bank_stats`: 获取 bank 统计
+- `bank_parse_retain`: Parse ## Retain section
+- `bank_update_entity`: Create/update entity page
+- `bank_read_entity`: Read entity page
+- `bank_append`: Append to bank file
+- `bank_stats`: Get bank statistics
 
-### CLI 命令
+### CLI Commands
 
 ```bash
-openclaw memory-bank init          # 初始化 bank 结构
-openclaw memory-bank parse <file>  # 解析 ## Retain
-openclaw memory-bank stats         # 查看统计
-openclaw memory-bank entities      # 列出实体
+openclaw memory-bank init          # Initialize bank structure
+openclaw memory-bank parse <file>  # Parse ## Retain
+openclaw memory-bank stats         # View statistics
+openclaw memory-bank entities      # List entities
 ```
 
 ---
 
-## 🧠 扩展 2: memory-amem (AMemGym 智能记忆)
+## 🧠 Extension 2: memory-amem (AMemGym Intelligent Memory)
 
-基于 [AMemGym: Interactive Memory Benchmarking for Assistants](https://openreview.net/forum?id=sfrVLzsmlf) 论文实现。
+Based on the [AMemGym: Interactive Memory Benchmarking for Assistants](https://openreview.net/forum?id=sfrVLzsmlf) paper implementation.
 
-### 核心概念
+### Core Concepts
 
-#### 2.1 AWE 架构 (Agentic Write External)
+#### 2.1 AWE Architecture (Agentic Write External)
 
-不同于传统的 RAG（被动检索）或长上下文（Native），AWE 让 Agent **主动决定**何时写入记忆：
+Unlike traditional RAG (passive retrieval) or long context (Native), AWE allows the Agent to **actively decide** when to write to memory:
 
 ```
-用户输入 → 重要性评估 → 置信度校准 → 重复检测 → 决策（写入/跳过）
+User input → Importance assessment → Confidence calibration → Duplicate detection → Decision (write/skip)
 ```
 
-#### 2.2 记忆类型系统
+#### 2.2 Memory Type System
 
 ```typescript
 type AMemEntryType = 
-  | "fact"           // 客观事实
-  | "preference"     // 用户偏好
-  | "goal"          // 用户目标
-  | "constraint"    // 约束条件
-  | "relationship"  // 关系信息
-  | "event";        // 事件记录
+  | "fact"           // Objective facts
+  | "preference"     // User preferences
+  | "goal"          // User goals
+  | "constraint"    // Constraint conditions
+  | "relationship"  // Relationship information
+  | "event";        // Event records
 ```
 
-#### 2.3 失败诊断三环节 (AMemGym)
+#### 2.3 Three-Stage Failure Diagnostics (AMemGym)
 
 ```typescript
 interface MemoryDiagnostics {
@@ -163,66 +163,66 @@ interface MemoryDiagnostics {
 }
 ```
 
-### 实现文件
+### Implementation Files
 
-| 文件 | 功能 |
-|------|------|
-| `types.ts` | 类型定义（AMemEntry, WriteDecision, MemoryDiagnostics） |
-| `write-decider.ts` | 智能写入决策器，支持重要性评估和重复检测 |
-| `index.ts` | 插件入口，注册工具和 CLI 命令 |
+| File | Function |
+|------|----------|
+| `types.ts` | Type definitions (AMemEntry, WriteDecision, MemoryDiagnostics) |
+| `write-decider.ts` | Intelligent write decider, supports importance assessment and duplicate detection |
+| `index.ts` | Plugin entry, registers tools and CLI commands |
 
-### 智能写入决策流程
+### Intelligent Write Decision Flow
 
 ```typescript
-// 1. 评估内容重要性
+// 1. Assess content importance
 const assessment = await assessContent(content, context);
 // → { importance: 0.85, type: "preference", confidence: 0.9, entities: ["Peter"] }
 
-// 2. 检测相似记忆
+// 2. Detect similar memories
 const similar = findSimilarEntry(content, existingEntries);
-// → 如果相似度 > 0.85，返回现有条目
+// → If similarity > 0.85, return existing entry
 
-// 3. 决策
-if (importance < threshold) → 跳过（低重要性）
-if (similar && confidence <= similar.confidence) → 跳过（重复）
-else → 写入（新记忆或更新）
+// 3. Decision
+if (importance < threshold) → Skip (low importance)
+if (similar && confidence <= similar.confidence) → Skip (duplicate)
+else → Write (new memory or update)
 ```
 
-### Agent 工具
+### Agent Tools
 
-- `amem_write`: 智能写入记忆
-- `amem_query`: 语义查询记忆
-- `amem_diagnostics`: 获取诊断统计
-- `amem_update`: 更新记忆
-- `amem_delete`: 删除记忆
+- `amem_write`: Intelligent memory write
+- `amem_query`: Semantic memory query
+- `amem_diagnostics`: Get diagnostic statistics
+- `amem_update`: Update memory
+- `amem_delete`: Delete memory
 
-### CLI 命令
+### CLI Commands
 
 ```bash
-openclaw memory-amem stats         # 查看统计
-openclaw memory-amem list          # 列出记忆
-openclaw memory-amem diagnostics   # 查看诊断
+openclaw memory-amem stats         # View statistics
+openclaw memory-amem list          # List memories
+openclaw memory-amem diagnostics   # View diagnostics
 ```
 
 ---
 
-## ⛏️ 扩展 3: memory-skill-miner (Skill 自动发现)
+## ⛏️ Extension 3: memory-skill-miner (Skill Automatic Discovery)
 
-基于 Anthropic Agent Skills 理念，实现从会话中自动发现 Skills。
+Based on the Anthropic Agent Skills concept, implements automatic skill discovery from conversations.
 
-### 核心概念
+### Core Concepts
 
-#### 3.1 Skill 挖掘引擎
+#### 3.1 Skill Mining Engine
 
-从会话历史中识别重复任务模式：
+Identify repetitive task patterns from conversation history:
 
 ```
-会话日志 → 意图提取 → 模式匹配 → 聚类分组 → 潜在 Skill
+Conversation logs → Intent extraction → Pattern matching → Clustering → Potential Skill
 ```
 
-#### 3.2 自动 Skill 生成
+#### 3.2 Automatic Skill Generation
 
-将识别出的模式转化为标准 SKILL.md：
+Transform identified patterns into standard SKILL.md:
 
 ```yaml
 ---
@@ -250,56 +250,56 @@ metadata:
 - tool2
 ```
 
-### 实现文件
+### Implementation Files
 
-| 文件 | 功能 |
-|------|------|
-| `types.ts` | 类型定义（PotentialSkill, GeneratedSkill, SkillEvaluation） |
-| `miner.ts` | Skill 挖掘引擎，支持模式匹配和聚类 |
-| `index.ts` | 插件入口，注册工具和 CLI 命令 |
+| File | Function |
+|------|----------|
+| `types.ts` | Type definitions (PotentialSkill, GeneratedSkill, SkillEvaluation) |
+| `miner.ts` | Skill mining engine, supports pattern matching and clustering |
+| `index.ts` | Plugin entry, registers tools and CLI commands |
 
-### Skill 挖掘流程
+### Skill Mining Flow
 
 ```typescript
-// 1. 加载近期会话
+// 1. Load recent sessions
 const sessions = await loadRecentSessions(7);
 
-// 2. 分析每个会话
+// 2. Analyze each session
 const analyses = sessions.map(s => analyzeSession(s));
 // → { userIntent, workflow, toolsUsed, outcome, entities }
 
-// 3. 提取模式
+// 3. Extract patterns
 const patterns = extractPatterns(analyses);
 // → [{ pattern: "help me with ...", similarity: 0.9, sessionIds: [...] }]
 
-// 4. 聚类为潜在 Skills
+// 4. Cluster into potential Skills
 const skills = groupIntoSkills(patterns, analyses);
 // → [PotentialSkill, ...]
 ```
 
-### Agent 工具
+### Agent Tools
 
-- `skill_mine`: 扫描会话发现 Skills
-- `skill_generate`: 生成 SKILL.md
-- `skill_preview`: 预览生成的 Skill
-- `skill_list_discovered`: 列出发现的 Skills
-- `skill_review`: 审批/拒绝潜在 Skill
+- `skill_mine`: Scan sessions to discover Skills
+- `skill_generate`: Generate SKILL.md
+- `skill_preview`: Preview generated Skill
+- `skill_list_discovered`: List discovered Skills
+- `skill_review`: Approve/reject potential Skill
 
-### CLI 命令
+### CLI Commands
 
 ```bash
-openclaw skill-miner scan --days 7    # 扫描潜在 Skills
-openclaw skill-miner list             # 查看发现的 Skills
-openclaw skill-miner generate <id>    # 生成 Skill
+openclaw skill-miner scan --days 7    # Scan for potential Skills
+openclaw skill-miner list             # View discovered Skills
+openclaw skill-miner generate <id>    # Generate Skill
 ```
 
 ---
 
-## 🔧 技术实现细节
+## 🔧 Technical Implementation Details
 
-### 配置系统
+### Configuration System
 
-所有扩展通过统一的配置系统管理：
+All extensions are managed through a unified configuration system:
 
 ```json
 {
@@ -340,9 +340,9 @@ openclaw skill-miner generate <id>    # 生成 Skill
 }
 ```
 
-### 可插拔架构
+### Pluggable Architecture
 
-每个扩展都是独立的 npm 包，通过 OpenClaw 插件 SDK 注册：
+Each extension is an independent npm package, registered through the OpenClaw plugin SDK:
 
 ```typescript
 const plugin = {
@@ -351,60 +351,60 @@ const plugin = {
   kind: "memory",
   
   register(api: OpenClawPluginApi) {
-    // 注册工具
+    // Register tools
     api.registerTool((ctx) => [...tools]);
     
-    // 注册 CLI 命令
+    // Register CLI commands
     api.registerCli(({ program }) => { ... });
   }
 };
 ```
 
-### 与原有系统的兼容性
+### Compatibility with Original System
 
-- 所有扩展**可选启用**，不影响原有功能
-- 原有 `memory-core` 和 `memory-lancedb` 继续工作
-- 新扩展通过配置项控制，可随时禁用
-
----
-
-## 📊 预期效果
-
-基于 AMemGym 研究数据和 Workspace Memory v2 设计目标：
-
-| 指标 | 改进前 | 改进后 | 提升 |
-|------|--------|--------|------|
-| 写入准确率 | 待测试 | 待测试 | 待测试 |
-| 读取召回率 | 待测试 | 待测试 | 待测试 |
-| 记忆利用率 | 待测试 | 待测试 | 待测试 |
-| 重复任务处理 | 手动 | 自动 Skill | N/A |
-| 结构化程度 | 无 | 完整类型系统 | N/A |
-| 可观测性 | 无 | 三环节诊断 | N/A |
+- All extensions are **optionally enabled** and do not affect original functionality
+- Original `memory-core` and `memory-lancedb` continue to work
+- New extensions can be disabled at any time through configuration
 
 ---
 
-## 🚀 使用方法
+## 📊 Expected Effects
 
-### 快速开始
+Based on AMemGym research data and Workspace Memory v2 design goals:
+
+| Metric | Before Improvement | After Improvement | Improvement |
+|--------|-------------------|-------------------|-------------|
+| Write Accuracy | To be tested | To be tested | To be tested |
+| Read Recall | To be tested | To be tested | To be tested |
+| Memory Utilization | To be tested | To be tested | To be tested |
+| Repetitive Task Processing | Manual | Automatic Skill | N/A |
+| Structuring Degree | None | Complete type system | N/A |
+| Observability | None | Three-stage diagnostics | N/A |
+
+---
+
+## 🚀 Usage
+
+### Quick Start
 
 ```bash
-# 1. 初始化 Memory Bank
+# 1. Initialize Memory Bank
 openclaw memory-bank init
 
-# 2. 扫描会话发现 Skills
+# 2. Scan sessions to discover Skills
 openclaw skill-miner scan --days 7
 
-# 3. 查看记忆统计
+# 3. View memory statistics
 openclaw memory-amem stats
 
-# 4. 在对话中使用
-# Agent 会自动使用 amem_write, bank_update_entity 等工具
+# 4. Use in conversation
+# Agent will automatically use amem_write, bank_update_entity, and other tools
 ```
 
-### 在对话中使用
+### Using in Conversation
 
 ```
-User: 请记住我喜欢在 WhatsApp 上接收简洁回复
+User: Please remember that I prefer to receive concise replies on WhatsApp
 → Agent: amem_write({
     content: "User prefers concise replies on WhatsApp",
     type: "preference",
@@ -413,7 +413,7 @@ User: 请记住我喜欢在 WhatsApp 上接收简洁回复
   })
 
 User: /new
-→ 智能体：bank_update_entity({
+→ Agent: bank_update_entity({
     entityId: "User",
     name: "User",
     summary: "...",
@@ -423,7 +423,7 @@ User: /new
 
 ---
 
-## 📚 参考资料
+## 📚 References
 
 1. **AMemGym Paper**: [Interactive Memory Benchmarking for Assistants](https://openreview.net/forum?id=sfrVLzsmlf)
 2. **Workspace Memory v2**: [OpenClaw Research Notes](https://docs.openclaw.ai/experiments/research/memory)
@@ -433,9 +433,9 @@ User: /new
 
 ---
 
-## 📝 改动文件清单
+## 📝 Changed Files List
 
-### 新增文件
+### New Files
 
 ```
 extensions/memory-bank/
@@ -457,53 +457,53 @@ extensions/memory-skill-miner/
 ├── types.ts
 └── miner.ts
 
-MEMORY_IMPROVEMENTS.md          # 本文件
+MEMORY_IMPROVEMENTS.md          # This file
 ```
 
-### 修改文件
+### Modified Files
 
 ```
-~/.openclaw/openclaw.json       # 添加扩展配置
+~/.openclaw/openclaw.json       # Added extension configuration
 ```
 
 ---
 
-## 🤝 贡献指南
+## 🤝 Contribution Guide
 
-欢迎提交 Issue 和 PR！
+Welcome to submit Issues and PRs!
 
-### 开发流程
+### Development Process
 
 ```bash
-# 1. 克隆仓库
+# 1. Clone repository
 git clone https://github.com/Kakezh/openclaw-memoryplus.git
 
-# 2. 安装依赖
+# 2. Install dependencies
 pnpm install
 
-# 3. 构建
+# 3. Build
 pnpm build
 
-# 4. 测试
+# 4. Test
 pnpm test
 ```
 
-### 提交规范
+### Commit Convention
 
-- `feat:` 新功能
-- `fix:` 修复
-- `docs:` 文档
-- `refactor:` 重构
-- `test:` 测试
+- `feat:` New feature
+- `fix:` Fix
+- `docs:` Documentation
+- `refactor:` Refactor
+- `test:` Test
 
 ---
 
 ## 📄 License
 
-MIT License - 基于 OpenClaw 原项目
+MIT License - Based on OpenClaw original project
 
 ---
 
-**作者**: Kakezh  
-**版本**: 2026.2.1  
-**日期**: 2026-02-09
+**Author**: Kakezh  
+**Version**: 2026.2.1  
+**Date**: 2026-02-09
