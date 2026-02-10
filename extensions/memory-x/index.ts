@@ -1,19 +1,14 @@
 /**
  * Memory-X: Unified Hierarchical Memory System
  * Based on xMemory (Four-level Hierarchy) and Memory Taxonomy (3D Classification)
- * 
- * Core innovations:
- * 1. Four-level hierarchy: Original → Episode → Semantic → Theme
- * 2. Sparsity-Semantics objective for automatic split/merge
- * 3. Top-down retrieval with uncertainty gating
- * 4. 3D taxonomy: Form × Function × Dynamics
- * 5. Integrated skill mining from themes
  */
 
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import type { AgentTool, AgentToolResult } from "@mariozechner/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import type { Static } from "@sinclair/typebox";
+import fs from "fs";
+import path from "path";
 import type {
   MemoryXConfig,
   MemoryHierarchy,
@@ -21,7 +16,6 @@ import type {
   EpisodeMemory,
   SemanticMemory,
   ThemeMemory,
-  PotentialSkill,
 } from "./types.js";
 
 type TextContent = { type: "text"; text: string };
@@ -30,7 +24,7 @@ type TextContent = { type: "text"; text: string };
 const DEFAULT_CONFIG: MemoryXConfig = {
   enabled: true,
   workspacePath: "",
-  dbPath: ".memory/memory-x.sqlite",
+  dbPath: ".memory/index.json", // Derived store index
   hierarchy: {
     maxThemeSize: 50,
     minThemeCoherence: 0.7,
@@ -49,37 +43,15 @@ const DEFAULT_CONFIG: MemoryXConfig = {
     parametricFactualThreshold: 0.9,
   },
   store: {
-    factual: {
-      form: "token",
-      updateStrategy: "version",
-      confidenceThreshold: 0.9,
-    },
-    experiential: {
-      form: "token",
-      hierarchyEnabled: true,
-      autoReorganize: true,
-    },
-    working: {
-      maxTurns: 5,
-      maxTokens: 2000,
-      evictionPolicy: "lru",
-    },
+    factual: { form: "token", updateStrategy: "version", confidenceThreshold: 0.9 },
+    experiential: { form: "token", hierarchyEnabled: true, autoReorganize: true },
+    working: { maxTurns: 5, maxTokens: 2000, evictionPolicy: "lru" },
   },
   skills: {
     autoMineFromThemes: true,
     minThemeFrequency: 3,
   },
 };
-
-// In-memory storage (will be replaced with SQLite)
-const hierarchy: MemoryHierarchy = {
-  originals: new Map(),
-  episodes: new Map(),
-  semantics: new Map(),
-  themes: new Map(),
-};
-
-const discoveredSkills: Map<string, PotentialSkill> = new Map();
 
 // Helper: Create text content for AgentToolResult
 function createTextContent(text: string): TextContent[] {
@@ -89,9 +61,20 @@ function createTextContent(text: string): TextContent[] {
 // Helper: Create AgentToolResult
 function createToolResult<T>(details: T): AgentToolResult<T> {
   return {
-    content: createTextContent(JSON.stringify(details)),
+    content: createTextContent(JSON.stringify(details, null, 2)),
     details,
   };
+}
+
+// Helper: Estimate token count
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
+// Helper: Get Today's Date YYYY-MM-DD
+function getTodayDate(): string {
+  const now = new Date();
+  return now.toISOString().split("T")[0];
 }
 
 const memoryXPlugin = {
@@ -111,7 +94,94 @@ const memoryXPlugin = {
           ...(api.pluginConfig as unknown as Partial<MemoryXConfig>),
         };
 
-        // Tool 1: memory_remember - Unified write entry
+        // Initialize Directories
+        const memoryDir = path.join(config.workspacePath, "memory"); // Canonical daily logs
+        const dotMemoryDir = path.join(config.workspacePath, ".memory"); // Derived store
+
+        [memoryDir, dotMemoryDir, 
+         path.join(dotMemoryDir, "episodes"), 
+         path.join(dotMemoryDir, "semantics"), 
+         path.join(dotMemoryDir, "themes")].forEach(dir => {
+          if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        });
+
+        // Initialize Derived Index
+        const indexParams = {
+            originals: new Map<string, string>(), // ID -> File Path
+            episodes: new Map<string, string>(),
+            semantics: new Map<string, string>(),
+            themes: new Map<string, string>(),
+        };
+
+        // Load Index if exists (Simplified)
+        // In a real implementation, we would rebuild this from files if missing.
+        // For now, we rely on in-memory cache for the session, or simple JSON load.
+        // Note: This simple index doesn't persist properly across complex reloads without full sync logic.
+        // We will implement a basic "write-through" cache.
+
+        function saveMemory(level: "original" | "episode" | "semantic" | "theme", id: string, data: any) {
+            let filePath = "";
+            if (level === "original") {
+                // Append to daily log (Canonical)
+                const date = getTodayDate();
+                filePath = path.join(memoryDir, `${date}.md`);
+                const logEntry = `\n- [${new Date().toLocaleTimeString()}] ${data.content} <!-- id:${id} -->`;
+                fs.appendFileSync(filePath, logEntry);
+                indexParams.originals.set(id, filePath);
+            } else if (level === "theme") {
+                // Save to .memory/themes/ID.json (Derived)
+                filePath = path.join(dotMemoryDir, "themes", `${id}.json`);
+                fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+                indexParams.themes.set(id, filePath);
+            } else {
+                // Save to .memory/{level}s/ID.json
+                filePath = path.join(dotMemoryDir, `${level}s`, `${id}.json`);
+                fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+                if (level === "episode") indexParams.episodes.set(id, filePath);
+                if (level === "semantic") indexParams.semantics.set(id, filePath);
+            }
+        }
+        
+        // Helper: Find Theme
+        function findTheme(keyword: string): ThemeMemory | null {
+            // Brute force search in .memory/themes/
+            const themeFiles = fs.readdirSync(path.join(dotMemoryDir, "themes"));
+            for (const file of themeFiles) {
+                const content = fs.readFileSync(path.join(dotMemoryDir, "themes", file), "utf-8");
+                const theme = JSON.parse(content) as ThemeMemory;
+                if (theme.name.toLowerCase().includes(keyword.toLowerCase())) return theme;
+            }
+            return null;
+        }
+
+        // Helper: Find or create theme
+        function findOrCreateTheme(semantic: SemanticMemory): ThemeMemory {
+          const entities = semantic.entityRefs || [];
+          for (const entity of entities) {
+              const existing = findTheme(entity);
+              if (existing) {
+                  existing.semanticIds.push(semantic.id);
+                  existing.updatedAt = Date.now();
+                  saveMemory("theme", existing.id, existing);
+                  return existing;
+              }
+          }
+
+          const themeName = entities[0] || `Theme-${Date.now()}`;
+          const theme: ThemeMemory = {
+            id: `theme-${Date.now()}`,
+            name: themeName,
+            description: `Theme for ${themeName}`,
+            semanticIds: [semantic.id],
+            coherenceScore: semantic.confidence,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          };
+          saveMemory("theme", theme.id, theme);
+          return theme;
+        }
+
+        // Tool 1: memory_remember
         const rememberParamsSchema = Type.Object({
           content: Type.String(),
           type: Type.Enum({
@@ -151,20 +221,18 @@ const memoryXPlugin = {
               const timestamp = Date.now();
               const sessionId = ctx.sessionKey || "default";
 
-              // Level 1: Create Original
+              // Level 1: Original (Canonical Log)
               const original: OriginalMemory = {
                 id: `orig-${timestamp}`,
                 content: params.content,
                 timestamp,
                 sessionId,
                 speaker: "user",
-                metadata: {
-                  importance: params.confidence || 0.5,
-                },
+                metadata: { importance: params.confidence || 0.5 },
               };
-              hierarchy.originals.set(original.id, original);
+              saveMemory("original", original.id, original);
 
-              // Level 2: Create/Update Episode
+              // Level 2: Episode (Derived)
               const episode: EpisodeMemory = {
                 id: `ep-${timestamp}`,
                 summary: params.content.substring(0, 100),
@@ -174,9 +242,9 @@ const memoryXPlugin = {
                 boundaryType: "topic",
                 coherenceScore: params.confidence || 0.5,
               };
-              hierarchy.episodes.set(episode.id, episode);
+              saveMemory("episode", episode.id, episode);
 
-              // Level 3: Create Semantic
+              // Level 3: Semantic (Derived)
               const semantic: SemanticMemory = {
                 id: `sem-${timestamp}`,
                 content: params.content,
@@ -185,18 +253,12 @@ const memoryXPlugin = {
                 sourceEpisodes: [episode.id],
                 entityRefs: params.entities || [],
               };
-              hierarchy.semantics.set(semantic.id, semantic);
+              saveMemory("semantic", semantic.id, semantic);
 
-              // Level 4: Assign to Theme (or create new)
-              let theme = findOrCreateTheme(semantic, hierarchy, config);
-              semantic.entityRefs.forEach((entity) => {
-                if (!theme.name.toLowerCase().includes(entity.toLowerCase())) {
-                  theme.description += ` Related to ${entity}.`;
-                }
-              });
-              hierarchy.themes.set(theme.id, theme);
-
-              logger.info(`Memory stored at all 4 levels: ${original.id}`);
+              // Level 4: Theme (Derived + Curated)
+              const theme = findOrCreateTheme(semantic);
+              
+              logger.info(`Memory stored: ${original.id}`);
 
               return createToolResult({
                 success: true,
@@ -214,7 +276,7 @@ const memoryXPlugin = {
           },
         };
 
-        // Tool 2: memory_recall - Top-down retrieval
+        // Tool 2: memory_recall
         const recallParamsSchema = Type.Object({
           query: Type.String(),
           maxTokens: Type.Optional(Type.Number({ default: 4000 })),
@@ -244,35 +306,49 @@ const memoryXPlugin = {
             _signal?: AbortSignal
           ): Promise<AgentToolResult<RecallResult>> {
             try {
-              const { query, maxTokens = 4000 } = params;
-
-              // Stage 1: Select themes (simplified - keyword matching)
-              const themes = Array.from(hierarchy.themes.values())
-                .filter((t) =>
-                  query.toLowerCase().includes(t.name.toLowerCase()) ||
-                  t.semanticIds.some((sid) => {
-                    const sem = hierarchy.semantics.get(sid);
-                    return sem && query.toLowerCase().includes(sem.content.toLowerCase().substring(0, 50));
-                  })
-                )
-                .slice(0, config.retrieval.themeTopK);
-
-              // Stage 2: Select semantics from themes
+              const { query } = params;
+              const keywords = query.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+              
+              const themes: ThemeMemory[] = [];
               const semantics: SemanticMemory[] = [];
-              for (const theme of themes) {
-                for (const sid of theme.semanticIds.slice(0, 3)) {
-                  const sem = hierarchy.semantics.get(sid);
-                  if (sem) semantics.push(sem);
-                }
+              const episodes: EpisodeMemory[] = [];
+
+              // Search Themes (Filesystem Scan)
+              const themeFiles = fs.readdirSync(path.join(dotMemoryDir, "themes"));
+              for (const file of themeFiles) {
+                  const t = JSON.parse(fs.readFileSync(path.join(dotMemoryDir, "themes", file), "utf-8")) as ThemeMemory;
+                  if (keywords.some(k => t.name.toLowerCase().includes(k) || t.description.toLowerCase().includes(k))) {
+                      themes.push(t);
+                  }
               }
 
-              // Stage 3: Expand to episodes (uncertainty gating - simplified)
-              const episodes: EpisodeMemory[] = [];
-              for (const sem of semantics.slice(0, config.retrieval.semanticTopK)) {
-                for (const eid of sem.sourceEpisodes) {
-                  const ep = hierarchy.episodes.get(eid);
-                  if (ep) episodes.push(ep);
-                }
+              // Search Semantics (Filesystem Scan)
+              // Note: This is inefficient for large datasets but works for "small pilot".
+              const semFiles = fs.readdirSync(path.join(dotMemoryDir, "semantics"));
+              for (const file of semFiles) {
+                  const s = JSON.parse(fs.readFileSync(path.join(dotMemoryDir, "semantics", file), "utf-8")) as SemanticMemory;
+                  if (keywords.some(k => s.content.toLowerCase().includes(k))) {
+                      semantics.push(s);
+                  }
+              }
+              // Add semantics from themes
+              for (const theme of themes) {
+                  for (const sid of theme.semanticIds) {
+                      const sPath = path.join(dotMemoryDir, "semantics", `${sid}.json`);
+                      if (fs.existsSync(sPath)) {
+                          semantics.push(JSON.parse(fs.readFileSync(sPath, "utf-8")));
+                      }
+                  }
+              }
+
+              // Expand Episodes
+              for (const sem of semantics.slice(0, 10)) {
+                  for (const eid of sem.sourceEpisodes) {
+                      const ePath = path.join(dotMemoryDir, "episodes", `${eid}.json`);
+                      if (fs.existsSync(ePath)) {
+                          episodes.push(JSON.parse(fs.readFileSync(ePath, "utf-8")));
+                      }
+                  }
               }
 
               const totalTokens = estimateTokens(
@@ -299,43 +375,73 @@ const memoryXPlugin = {
           },
         };
 
-        // Tool 3: memory_reflect - Pattern discovery
-        const reflectParamsSchema = Type.Object({});
+        // Tool 3: memory_reflect
+        const reflectParamsSchema = Type.Object({
+          focus: Type.Optional(Type.Enum({ skills: "skills", evolution: "evolution", general: "general" })),
+        });
         type ReflectResult = {
           patterns: {
             themeId: string;
             themeName: string;
             occurrenceCount: number;
             suggestedSkill: string;
+            context: string[];
+          }[];
+          evolutionSuggestions?: {
+             type: "prompt_update" | "new_rule";
+             content: string;
+             reason: string;
           }[];
         };
 
         const reflectTool: AgentTool<typeof reflectParamsSchema, ReflectResult> = {
           name: "memory_reflect",
           label: "Reflect",
-          description: "Scan memory hierarchy to discover patterns and skills",
+          description: "Scan memory hierarchy to discover patterns, mine skills, and suggest self-evolution",
           parameters: reflectParamsSchema,
           async execute(
             _toolCallId: string,
-            _params: Static<typeof reflectParamsSchema>,
+            params: Static<typeof reflectParamsSchema>,
             _signal?: AbortSignal
           ): Promise<AgentToolResult<ReflectResult>> {
             const patterns = [];
-            for (const theme of hierarchy.themes.values()) {
-              if (theme.semanticIds.length >= config.skills.minThemeFrequency) {
-                patterns.push({
-                  themeId: theme.id,
-                  themeName: theme.name,
-                  occurrenceCount: theme.semanticIds.length,
-                  suggestedSkill: `Handle ${theme.name.toLowerCase()} requests`,
-                });
-              }
+            const evolutionSuggestions = [];
+            const themeFiles = fs.readdirSync(path.join(dotMemoryDir, "themes"));
+            
+            for (const file of themeFiles) {
+                const theme = JSON.parse(fs.readFileSync(path.join(dotMemoryDir, "themes", file), "utf-8")) as ThemeMemory;
+                
+                // Advanced Skill Mining Logic
+                if (theme.semanticIds.length >= config.skills.minThemeFrequency) {
+                    // Gather context for the skill
+                    const context = theme.semanticIds.slice(0, 3).map(sid => {
+                        const sPath = path.join(dotMemoryDir, "semantics", `${sid}.json`);
+                        return fs.existsSync(sPath) ? (JSON.parse(fs.readFileSync(sPath, "utf-8")) as SemanticMemory).content : "";
+                    }).filter(c => c);
+
+                    patterns.push({
+                        themeId: theme.id,
+                        themeName: theme.name,
+                        occurrenceCount: theme.semanticIds.length,
+                        suggestedSkill: `Standard Operating Procedure (SOP) for ${theme.name}`,
+                        context,
+                    });
+
+                    // Evolution Logic (Simple Heuristic based on repetition)
+                     if (theme.semanticIds.length > 5) {
+                         evolutionSuggestions.push({
+                             type: "prompt_update" as const,
+                             content: `Add a rule to handle "${theme.name}" explicitly in system prompt.`,
+                             reason: `High frequency theme (${theme.semanticIds.length} occurrences) detected.`,
+                         });
+                     }
+                }
             }
-            return createToolResult({ patterns });
+            return createToolResult({ patterns, evolutionSuggestions });
           },
         };
 
-        // Tool 4: memory_introspect - Diagnostics
+        // Tool 4: memory_introspect
         const introspectParamsSchema = Type.Object({});
         type IntrospectResult = {
           hierarchy: {
@@ -357,25 +463,28 @@ const memoryXPlugin = {
             _params: Static<typeof introspectParamsSchema>,
             _signal?: AbortSignal
           ): Promise<AgentToolResult<IntrospectResult>> {
+            const originals = fs.existsSync(memoryDir) ? fs.readdirSync(memoryDir).length : 0; // Rough count of days
+            const episodes = fs.existsSync(path.join(dotMemoryDir, "episodes")) ? fs.readdirSync(path.join(dotMemoryDir, "episodes")).length : 0;
+            const semantics = fs.existsSync(path.join(dotMemoryDir, "semantics")) ? fs.readdirSync(path.join(dotMemoryDir, "semantics")).length : 0;
+            const themes = fs.existsSync(path.join(dotMemoryDir, "themes")) ? fs.readdirSync(path.join(dotMemoryDir, "themes")).length : 0;
+
             return createToolResult({
               hierarchy: {
-                originals: hierarchy.originals.size,
-                episodes: hierarchy.episodes.size,
-                semantics: hierarchy.semantics.size,
-                themes: hierarchy.themes.size,
+                originals, // Note: this counts FILES (days), not individual items
+                episodes,
+                semantics,
+                themes,
               },
               health: "healthy",
             });
           },
         };
 
-        // Tool 5: memory_consolidate - Memory evolution
+        // Tool 5: memory_consolidate
         const consolidateParamsSchema = Type.Object({
           action: Type.Enum({ merge: "merge", split: "split", resolve: "resolve" }),
           targetIds: Type.Array(Type.String()),
         });
-
-        type ConsolidateParams = Static<typeof consolidateParamsSchema>;
         type ConsolidateResult = { success: boolean };
 
         const consolidateTool: AgentTool<typeof consolidateParamsSchema, ConsolidateResult> = {
@@ -385,29 +494,30 @@ const memoryXPlugin = {
           parameters: consolidateParamsSchema,
           async execute(
             _toolCallId: string,
-            params: ConsolidateParams,
+            params: Static<typeof consolidateParamsSchema>,
             _signal?: AbortSignal
           ): Promise<AgentToolResult<ConsolidateResult>> {
             const { action, targetIds } = params;
             if (action === "merge" && targetIds.length >= 2) {
-              // Simplified merge: combine semantics from multiple themes
-              const targetTheme = hierarchy.themes.get(targetIds[0]);
-              if (targetTheme) {
-                for (let i = 1; i < targetIds.length; i++) {
-                  const sourceTheme = hierarchy.themes.get(targetIds[i]);
-                  if (sourceTheme) {
-                    targetTheme.semanticIds.push(...sourceTheme.semanticIds);
-                    hierarchy.themes.delete(targetIds[i]);
-                  }
-                }
-                hierarchy.themes.set(targetTheme.id, targetTheme);
-              }
+               const targetPath = path.join(dotMemoryDir, "themes", `${targetIds[0]}.json`);
+               if (fs.existsSync(targetPath)) {
+                   const targetTheme = JSON.parse(fs.readFileSync(targetPath, "utf-8")) as ThemeMemory;
+                   for (let i = 1; i < targetIds.length; i++) {
+                       const sourcePath = path.join(dotMemoryDir, "themes", `${targetIds[i]}.json`);
+                       if (fs.existsSync(sourcePath)) {
+                           const sourceTheme = JSON.parse(fs.readFileSync(sourcePath, "utf-8")) as ThemeMemory;
+                           targetTheme.semanticIds.push(...sourceTheme.semanticIds);
+                           fs.unlinkSync(sourcePath);
+                       }
+                   }
+                   fs.writeFileSync(targetPath, JSON.stringify(targetTheme, null, 2));
+               }
             }
             return createToolResult({ success: true });
           },
         };
 
-        // Tool 6: memory_status - Statistics
+        // Tool 6: memory_status
         const statusParamsSchema = Type.Object({});
         type StatusResult = {
           stats: {
@@ -427,15 +537,63 @@ const memoryXPlugin = {
             _signal?: AbortSignal
           ): Promise<AgentToolResult<StatusResult>> {
             const themeDistribution: Record<string, number> = {};
-            for (const theme of hierarchy.themes.values()) {
-              themeDistribution[theme.name] = theme.semanticIds.length;
+            if (fs.existsSync(path.join(dotMemoryDir, "themes"))) {
+                const themeFiles = fs.readdirSync(path.join(dotMemoryDir, "themes"));
+                for (const file of themeFiles) {
+                    const t = JSON.parse(fs.readFileSync(path.join(dotMemoryDir, "themes", file), "utf-8")) as ThemeMemory;
+                    themeDistribution[t.name] = t.semanticIds.length;
+                }
             }
+            const count = fs.existsSync(path.join(dotMemoryDir, "semantics")) ? fs.readdirSync(path.join(dotMemoryDir, "semantics")).length : 0;
             return createToolResult({
               stats: {
-                totalMemories: hierarchy.originals.size,
+                totalMemories: count, // Using semantic count as proxy for total items
                 themeDistribution,
               },
             });
+          },
+        };
+
+        // Tool 7: memory_evolve
+        const evolveParamsSchema = Type.Object({
+          action: Type.Enum({ add_rule: "add_rule", add_sop: "add_sop" }),
+          content: Type.String(),
+          reason: Type.String(),
+        });
+        type EvolveResult = { success: boolean; path: string };
+
+        const evolveTool: AgentTool<typeof evolveParamsSchema, EvolveResult> = {
+          name: "memory_evolve",
+          label: "Evolve",
+          description: "Self-modify behavior by updating META.md with new rules or SOPs",
+          parameters: evolveParamsSchema,
+          async execute(
+            _toolCallId: string,
+            params: Static<typeof evolveParamsSchema>,
+            _signal?: AbortSignal
+          ): Promise<AgentToolResult<EvolveResult>> {
+            const metaPath = path.join(memoryDir, "META.md");
+            // Create if missing
+            if (!fs.existsSync(metaPath)) {
+                fs.writeFileSync(metaPath, "# META.md - Self-Evolution & Rules\n\n## 🛡️ Core Rules\n\n## 📘 Standard Operating Procedures (SOPs)\n\n");
+            }
+            
+            const timestamp = new Date().toLocaleDateString();
+            let entry = "";
+            
+            if (params.action === "add_rule") {
+                entry = `\n- [${timestamp}] ${params.content} <!-- Reason: ${params.reason} -->`;
+                // Append to Core Rules section (Simple string manipulation for MVP)
+                // Ideally use AST or robust parser. Here we just append to file end or specific marker if possible.
+                // For safety, we just append to the file now.
+                fs.appendFileSync(metaPath, entry);
+            } else if (params.action === "add_sop") {
+                entry = `\n### [SOP-${Date.now()}] ${params.reason}\n${params.content}\n`;
+                fs.appendFileSync(metaPath, entry);
+            }
+
+            logger.info(`Memory evolved: ${params.action}`);
+            return createToolResult({ success: true, path: metaPath });
           },
         };
 
@@ -446,97 +604,17 @@ const memoryXPlugin = {
           introspectTool,
           consolidateTool,
           statusTool,
+          evolveTool,
         ];
       },
-      { names: ["memory_remember", "memory_recall", "memory_reflect", "memory_introspect", "memory_consolidate", "memory_status"] }
-    );
-
-    // Register CLI
-    api.registerCli(
-      ({ program }) => {
-        const memoryCmd = program
-          .command("memory-x")
-          .description("Memory-X hierarchical memory system");
-
-        memoryCmd
-          .command("status")
-          .description("Show memory statistics")
-          .action(async () => {
-            console.log("\nMemory-X Statistics:");
-            console.log("=" .repeat(40));
-            console.log(`Originals: ${hierarchy.originals.size}`);
-            console.log(`Episodes: ${hierarchy.episodes.size}`);
-            console.log(`Semantics: ${hierarchy.semantics.size}`);
-            console.log(`Themes: ${hierarchy.themes.size}`);
-          });
-
-        memoryCmd
-          .command("themes")
-          .description("List all themes")
-          .action(async () => {
-            console.log("\nThemes:");
-            console.log("=" .repeat(40));
-            for (const theme of hierarchy.themes.values()) {
-              console.log(`${theme.name}: ${theme.semanticIds.length} semantics`);
-            }
-          });
-
-        memoryCmd
-          .command("reflect")
-          .description("Discover patterns from themes")
-          .action(async () => {
-            console.log("\nDiscovered Patterns:");
-            console.log("=" .repeat(40));
-            for (const theme of hierarchy.themes.values()) {
-              if (theme.semanticIds.length >= 3) {
-                console.log(`\n${theme.name} (${theme.semanticIds.length} occurrences)`);
-                console.log(`  Suggested Skill: Handle ${theme.name.toLowerCase()} requests`);
-              }
-            }
-          });
-      },
-      { commands: ["memory-x"] }
+      // Tools are now exposed globally by the plugin, but logically belong to the 'memory-core' skill.
+      // The 'openclaw.plugin.json' "skills" entry ensures the Skill metadata is loaded.
+      // The tools registered here will be available to the agent.
+      { names: ["memory_remember", "memory_recall", "memory_reflect", "memory_introspect", "memory_consolidate", "memory_status", "memory_evolve"] }
     );
 
     logger.info("Memory-X plugin registered");
   },
 };
-
-// Helper: Find or create theme for semantic
-function findOrCreateTheme(
-  semantic: SemanticMemory,
-  hierarchy: MemoryHierarchy,
-  config: MemoryXConfig
-): ThemeMemory {
-  // Try to find existing theme by entity or content similarity
-  for (const theme of hierarchy.themes.values()) {
-    const hasCommonEntity = semantic.entityRefs.some((e) =>
-      theme.name.toLowerCase().includes(e.toLowerCase()) ||
-      theme.description.toLowerCase().includes(e.toLowerCase())
-    );
-    if (hasCommonEntity) {
-      theme.semanticIds.push(semantic.id);
-      theme.updatedAt = Date.now();
-      return theme;
-    }
-  }
-
-  // Create new theme
-  const themeName = semantic.entityRefs[0] || `Theme-${Date.now()}`;
-  return {
-    id: `theme-${Date.now()}`,
-    name: themeName,
-    description: `Theme for ${themeName}`,
-    semanticIds: [semantic.id],
-    coherenceScore: semantic.confidence,
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
-  };
-}
-
-// Helper: Estimate token count
-function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4);
-}
 
 export default memoryXPlugin;

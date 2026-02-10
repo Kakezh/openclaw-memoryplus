@@ -1,0 +1,19 @@
+{
+  "id": "memory-x",
+  "kind": "memory",
+  "skills": ["skills/memory-core"],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "enabled": { "type": "boolean" },
+      "workspacePath": { "type": "string" },
+      "dbPath": { "type": "string" },
+      "hierarchy": { "type": "object" },
+      "retrieval": { "type": "object" },
+      "taxonomy": { "type": "object" },
+      "store": { "type": "object" },
+      "skills": { "type": "object" }
+    }
+  }
+}

@@ -201,15 +201,19 @@ export async function isSystemdUserServiceAvailable(): Promise<boolean> {
 }
 
 async function assertSystemdAvailable() {
-  const res = await execSystemctl(["--user", "status"]);
-  if (res.code === 0) {
-    return;
+  const available = await isSystemdUserServiceAvailable();
+  if (!available) {
+    // Check specific error message for better reporting, but only throw if we expected it to be available
+    // Actually, for read operations, we should just return "unknown" state instead of throwing.
+    // But this function is used by install/stop/start which MUST fail if systemd is missing.
+    // We can re-run exec to get the error detail.
+    const res = await execSystemctl(["--user", "status"]);
+    const detail = res.stderr || res.stdout;
+    if (detail.toLowerCase().includes("not found")) {
+      throw new Error("systemctl not available; systemd user services are required on Linux.");
+    }
+    throw new Error(`systemctl --user unavailable: ${detail || "unknown error"}`.trim());
   }
-  const detail = res.stderr || res.stdout;
-  if (detail.toLowerCase().includes("not found")) {
-    throw new Error("systemctl not available; systemd user services are required on Linux.");
-  }
-  throw new Error(`systemctl --user unavailable: ${detail || "unknown error"}`.trim());
 }
 
 export async function installSystemdService({

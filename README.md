@@ -1,132 +1,124 @@
 # OpenClaw Memory-X
 
-> Unified hierarchical memory system based on xMemory and Memory Taxonomy (Welcome to communicate and collaborate!)
+> Unified hierarchical memory system based on xMemory and Memory Taxonomy.
+> "The unified memory layer for autonomous agents."
 
 ## 📋 Project Overview
 
-This project is a **refactored** memory system for [OpenClaw](https://github.com/openclaw), consolidating three separate extensions into a single unified `memory-x` extension based on cutting-edge research.
+This project is a **refactored** memory system for [OpenClaw](https://github.com/openclaw), consolidating three separate extensions into a single unified `memory-x` extension.
+
+It implements the **Workspace Memory v2** architecture, combining a **Canonical Store** (human-readable Markdown) with a **Derived Store** (machine-readable index).
 
 ### Why Refactor?
 
-The original three extensions (`memory-bank`, `memory-amem`, `memory-skill-miner`) had overlapping functionality and inconsistent APIs. This refactor unifies them into a cohesive system based on:
+The original system relied on scattered extensions (`memory-bank`, `memory-amem`, `memory-skill-miner`). Memory-X unifies them into a cohesive system based on:
 
-- **xMemory**: Four-level hierarchical memory structure
-- **Memory Taxonomy**: 3D classification (Form × Function × Dynamics)
+- **xMemory**: Four-level hierarchical memory structure (Original → Episode → Semantic → Theme).
+- **Memory Taxonomy**: 3D classification (Form × Function × Dynamics).
+- **Workspace Memory v2**: Offline-first, git-friendly persistence.
 
 ---
 
-## 🏗️ Architecture
+## 📦 Installation & Setup
+
+### 1. Install Plugin
+The Memory-X system is packaged as a standard OpenClaw plugin containing the `memory-core` skill.
+
+```bash
+# Build and pack the extension
+cd extensions/memory-x
+pnpm install && pnpm build
+pnpm pack
+
+# Install into OpenClaw (adjust version as needed)
+openclaw plugins install ./openclaw-memory-x-2026.2.2.tgz
+```
+
+### 2. Enable Skill
+After installation, enable the skill in your `AGENTS.md` or via CLI:
+
+```bash
+# Verify installation
+openclaw skills list | grep memory-core
+```
+
+### 3. Verify
+Check if the memory system is active:
+```bash
+openclaw agent run "memory_status({})"
+```
+
+---
+
+## 🏗️ Architecture: OpenClaw Adaptive Memory Core (OAMC)
+
+This system implements a "Dual-Stream" architecture fused with a "Self-Evolution" loop.
+
+### Directory Structure
 
 ```
 extensions/
-├── memory-core/              # Original: Basic memory search
-├── memory-lancedb/           # Original: LanceDB vector storage
-└── memory-x/                 # [Unified] Hierarchical memory system
+└── memory-x/
     ├── package.json
-    ├── types.ts              # Type definitions
-    └── index.ts              # Plugin entry with 6 unified tools
+    ├── types.ts              # Type definitions (xMemory, Taxonomy)
+    └── index.ts              # Unified plugin entry
 ```
 
-### Removed Extensions
+### 🧠 Core Concepts
 
-- ❌ `memory-bank/` → Merged into memory-x hierarchy
-- ❌ `memory-amem/` → Merged into memory-x taxonomy
-- ❌ `memory-skill-miner/` → Integrated into memory-x reflection
+#### 1. Four-Level Hierarchy (xMemory)
+
+| Level | Description | Persistence Location |
+|-------|-------------|----------------------|
+| **Original** | Raw messages, daily logs | `memory/YYYY-MM-DD.md` |
+| **Episode** | Contiguous message blocks | `.memory/episodes/` (JSON) |
+| **Semantic** | Reusable facts | `.memory/semantics/` (JSON) |
+| **Theme** | High-level concepts | `.memory/themes/` |
+
+#### 2. Workspace Persistence Layout (Dual-Stream)
+
+**Stream A: Canonical Store (Human Audit & Evolution)**
+*Location: `~/.openclaw/workspace/`*
+
+```text
+workspace/
+├── MEMORY.md                 # [Legacy] Root profile
+├── memory/
+│   ├── YYYY-MM-DD.md         # [Log] Narrative Stream
+│   └── META.md               # [Evolution] Self-generated Rules & SOPs
+```
+
+**Stream B: Derived Store (Machine Index)**
+*Location: `~/.openclaw/workspace/.memory/`*
+
+```text
+.memory/
+├── index.json                # Fast lookup
+├── episodes/                 # Context chunks
+├── semantics/                # Facts
+└── themes/                   # Clusters
+```
+
+#### 3. Self-Evolution Loop (AMemGym Style)
+
+1.  **Reflect**: `memory_reflect` identifies high-frequency patterns in Themes.
+2.  **Suggest**: System proposes a new Rule or SOP.
+3.  **Evolve**: `memory_evolve` writes the rule to `META.md`.
+4.  **Adapt**: Agent loads `META.md` into System Prompt on next run.
 
 ---
 
-## 🧠 Core Concepts
+## 🛠️ Unified Tool API
 
-### 1. Four-Level Hierarchy (xMemory)
-
-```
-Original → Episode → Semantic → Theme
-```
-
-| Level | Description | Example |
-|-------|-------------|---------|
-| **Original** | Raw messages with timestamps | "I prefer coffee" |
-| **Episode** | Contiguous message blocks | Meeting discussion |
-| **Semantic** | Reusable facts | User prefers coffee |
-| **Theme** | High-level concepts | User preferences |
-
-### 2. 3D Taxonomy (Memory Taxonomy)
-
-```
-Form × Function × Dynamics
-```
-
-**Form**: Where memory exists
-- `token`: Text tokens in context
-- `parametric`: Model weights
-- `latent`: Hidden states
-
-**Function**: What memory is used for
-- `factual`: World knowledge (Paris is capital of France)
-- `experiential`: Personal history (User likes coffee)
-- `working`: Temporary buffer
-
-**Dynamics**: How memory evolves
-- Forgetting curve
-- Memory consolidation
-- Conflict resolution
-
-### 3. Sparsity-Semantics Objective
-
-Automatic theme management:
-- **Split**: When theme grows too large (>50 items)
-- **Merge**: When themes are too similar
-- **44.9%** of nodes dynamically reallocated
-
-### 4. Top-Down Retrieval
-
-```
-Stage 1: Select themes (submodular greedy)
-    ↓
-Stage 2: Select semantics
-    ↓
-Stage 3: Expand episodes (uncertainty gating)
-```
-
-**Results**:
-- Token usage: **-30%**
-- QA accuracy: **+10%**
-- Evidence density: **2×**
-
----
-
-## 🛠️ Unified Tool API (6 Tools)
-
-| Tool | Description | Replaces |
-|------|-------------|----------|
-| `memory_remember` | Store memory with auto-classification | bank_parse_retain, amem_write |
-| `memory_recall` | Top-down hierarchy retrieval | amem_query, bank_read_entity |
-| `memory_reflect` | Discover patterns from themes | skill_mine |
-| `memory_introspect` | System diagnostics | amem_diagnostics |
-| `memory_consolidate` | Merge/split themes, resolve conflicts | amem_update, amem_delete |
-| `memory_status` | Statistics and metrics | bank_stats |
-
-### Tool Examples
-
-```typescript
-// Remember
-memory_remember({
-  content: "User prefers concise replies on WhatsApp",
-  type: "preference",
-  confidence: 0.95,
-  entities: ["User"]
-})
-
-// Recall
-memory_recall({
-  query: "What does the user prefer?",
-  maxTokens: 4000
-})
-
-// Reflect (discover skills)
-memory_reflect({})
-// → Discovers themes with >3 occurrences
-```
+| Tool | Description | Usage |
+|------|-------------|-------|
+| `memory_remember` | Store memory. | `memory_remember({ content: "..." })` |
+| `memory_recall` | Retrieve context. | `memory_recall({ query: "..." })` |
+| `memory_reflect` | Mine patterns & suggest evolution. | `memory_reflect({ focus: "evolution" })` |
+| `memory_evolve` | **Update META.md rules.** | `memory_evolve({ action: "add_rule", ... })` |
+| `memory_introspect` | System diagnostics. | `memory_introspect({})` |
+| `memory_consolidate` | Merge/Split themes. | `memory_consolidate({...})` |
+| `memory_status` | View stats. | `memory_status({})` |
 
 ---
 
@@ -141,21 +133,11 @@ memory_reflect({})
         "config": {
           "hierarchy": {
             "maxThemeSize": 50,
-            "minThemeCoherence": 0.7,
             "autoReorganize": true
           },
           "retrieval": {
             "themeTopK": 3,
-            "semanticTopK": 5,
-            "uncertaintyThreshold": 0.3,
-            "maxTokens": 4000
-          },
-          "taxonomy": {
-            "separateFactualExperiential": true
-          },
-          "skills": {
-            "autoMineFromThemes": true,
-            "minThemeFrequency": 3
+            "semanticTopK": 5
           }
         }
       }
@@ -166,113 +148,14 @@ memory_reflect({})
 
 ---
 
-## 🚀 Usage
-
-### CLI Commands
-
-```bash
-# View statistics
-openclaw memory-x status
-
-# List themes
-openclaw memory-x themes
-
-# Discover patterns
-openclaw memory-x reflect
-```
-
-### In Conversation
-
-```
-User: Please remember I prefer dark mode
-→ Agent: memory_remember({
-    content: "User prefers dark mode",
-    type: "preference",
-    confidence: 0.9,
-    entities: ["User"]
-  })
-
-User: What are my preferences?
-→ Agent: memory_recall({ query: "user preferences" })
-```
-
----
-
-## 📊 Expected Performance
-
-Based on xMemory and Taxonomy research:
-
-| Metric | Improvement |
-|--------|-------------|
-| Token Efficiency | -30% |
-| QA Accuracy | +10% |
-| Evidence Density | 2× |
-| Retrieval Redundancy | Significantly reduced |
-| Fact/Experience Separation | Complete |
-
----
-
 ## 📚 References
 
 1. **xMemory**: [Beyond RAG for Agent Memory](https://arxiv.org/html/2602.02007v1)
 2. **Memory Taxonomy**: [Memory in the Age of AI Agents](https://arxiv.org/abs/2512.13564)
-3. **AMemGym**: [Interactive Memory Benchmarking](https://openreview.net/forum?id=sfrVLzsmlf)
-4. **Workspace Memory v2**: [OpenClaw Research](https://docs.openclaw.ai/experiments/research/memory)
+3. **Workspace Memory v2**: [OpenClaw Research](https://docs.openclaw.ai/experiments/research/memory)
 
 ---
 
-## 📝 Changes from Previous Version
-
-### Before (3 Extensions)
-```
-extensions/
-├── memory-bank/         # 4 files
-├── memory-amem/         # 4 files
-└── memory-skill-miner/  # 4 files
-
-Tools: 15+ (scattered)
-```
-
-### After (1 Unified Extension)
-```
-extensions/
-└── memory-x/            # 3 files
-
-Tools: 6 (unified API)
-```
-
-**Benefits**:
-- ✅ Consistent API
-- ✅ Reduced complexity
-- ✅ Better type safety
-- ✅ Easier maintenance
-
----
-
-## 🤝 Contributing
-
-```bash
-# Clone
-git clone https://github.com/Kakezh/openclaw-memoryplus.git
-
-# Install
-pnpm install
-
-# Build
-pnpm build
-
-# Test
-pnpm test
-```
-
----
-
-## 📄 License
-
-MIT License - Based on OpenClaw original project
-
----
-
-**Author**: Kakezh  
-**Version**: 2026.2.2  
-**Date**: 2026-02-09
+**Author**: Kakezh
+**Version**: 2026.2.3
+**Date**: 2026-02-10

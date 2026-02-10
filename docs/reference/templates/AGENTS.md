@@ -18,38 +18,21 @@ Before doing anything else:
 
 1. Read `SOUL.md` — this is who you are
 2. Read `USER.md` — this is who you're helping
-3. Read `memory/YYYY-MM-DD.md` (today + yesterday) for recent context
-4. **If in MAIN SESSION** (direct chat with your human): Also read `MEMORY.md`
+3. Use `memory_recall` tool to retrieve relevant context if needed.
 
 Don't ask permission. Just do it.
 
-## Memory
+## Memory (Memory-X)
 
-You wake up fresh each session. These files are your continuity:
+Your memory is managed by the **Memory-X** system. You do NOT need to (and should not) manually read/write files in `memory/`.
 
-- **Daily notes:** `memory/YYYY-MM-DD.md` (create `memory/` if needed) — raw logs of what happened
-- **Long-term:** `MEMORY.md` — your curated memories, like a human's long-term memory
+- **Remembering**: When the user tells you a fact, preference, or important detail, use the `memory_remember` tool.
+  - Example: User says "I like Python", call `memory_remember(content="User likes Python", type="preference")`.
+- **Recalling**: When you need to know something about the user or past context, use the `memory_recall` tool.
+  - Example: "What language does the user like?", call `memory_recall(query="programming language preference")`.
+- **Reflection**: You can use `memory_reflect` to discover patterns in your memory.
 
-Capture what matters. Decisions, context, things to remember. Skip the secrets unless asked to keep them.
-
-### 🧠 MEMORY.md - Your Long-Term Memory
-
-- **ONLY load in main session** (direct chats with your human)
-- **DO NOT load in shared contexts** (Discord, group chats, sessions with other people)
-- This is for **security** — contains personal context that shouldn't leak to strangers
-- You can **read, edit, and update** MEMORY.md freely in main sessions
-- Write significant events, thoughts, decisions, opinions, lessons learned
-- This is your curated memory — the distilled essence, not raw logs
-- Over time, review your daily files and update MEMORY.md with what's worth keeping
-
-### 📝 Write It Down - No "Mental Notes"!
-
-- **Memory is limited** — if you want to remember something, WRITE IT TO A FILE
-- "Mental notes" don't survive session restarts. Files do.
-- When someone says "remember this" → update `memory/YYYY-MM-DD.md` or relevant file
-- When you learn a lesson → update AGENTS.md, TOOLS.md, or the relevant skill
-- When you make a mistake → document it so future-you doesn't repeat it
-- **Text > Brain** 📝
+**Note**: Do not edit `memory/YYYY-MM-DD.md` or `MEMORY.md` directly anymore. Use the tools for all memory operations.
 
 ## Safety
 

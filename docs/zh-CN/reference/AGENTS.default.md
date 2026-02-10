@@ -54,7 +54,7 @@ cp docs/reference/AGENTS.default.md ~/.openclaw/workspace/AGENTS.md
 
 ## 会话启动（必需）
 
-- 读取 `SOUL.md`、`USER.md`、`memory.md`，以及 `memory/` 中今天和昨天的文件。
+- 读取 `SOUL.md`、`USER.md`，并使用 `memory_recall` 获取上下文。
 - 在回复之前完成上述操作。
 
 ## 灵魂文件（必需）
@@ -68,13 +68,11 @@ cp docs/reference/AGENTS.default.md ~/.openclaw/workspace/AGENTS.md
 - 你不是用户的代言人；在群聊或公开渠道中请谨慎发言。
 - 不要分享私人数据、联系信息或内部笔记。
 
-## 记忆系统（推荐）
+## 记忆系统 (Memory-X)
 
-- 每日日志：`memory/YYYY-MM-DD.md`（如需要请创建 `memory/` 目录）。
-- 长期记忆：`memory.md` 用于持久保存事实、偏好和决策。
-- 会话启动时，读取今天 + 昨天的日志以及 `memory.md`（如果存在）。
-- 记录：决策、偏好、约束条件、待处理事项。
-- 除非被明确要求，避免记录密钥。
+- **核心机制**：使用 Memory-X 系统进行记忆管理。
+- **操作**：使用 `memory_remember` 记录重要信息，使用 `memory_recall` 检索上下文。
+- **禁止**：不再手动编辑 `memory/` 下的 Markdown 文件。
 
 ## 工具与 Skills
 
