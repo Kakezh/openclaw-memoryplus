@@ -11,7 +11,7 @@
  */
 
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
-import type { AnyAgentTool } from "openclaw/plugin-sdk";
+import type { AgentTool } from "@mariozechner/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import type {
   MemoryXConfig,
@@ -93,7 +93,7 @@ const memoryXPlugin = {
         const config: MemoryXConfig = { ...DEFAULT_CONFIG, ...ctx.config };
 
         // Tool 1: memory_remember - Unified write entry
-        const rememberTool: AnyAgentTool = {
+        const rememberTool: AgentTool = {
           name: "memory_remember",
           description: "Store a memory with automatic hierarchy classification",
           parameters: Type.Object({
@@ -186,14 +186,14 @@ const memoryXPlugin = {
                 },
               };
             } catch (error) {
-              logger.error("Failed to remember:", error);
+              logger.error(`Failed to remember: ${error}`);
               throw error;
             }
           },
         };
 
         // Tool 2: memory_recall - Top-down retrieval
-        const recallTool: AnyAgentTool = {
+        const recallTool: AgentTool = {
           name: "memory_recall",
           description: "Retrieve memories using top-down hierarchy traversal",
           parameters: Type.Object({
@@ -266,14 +266,14 @@ const memoryXPlugin = {
                 },
               };
             } catch (error) {
-              logger.error("Failed to recall:", error);
+              logger.error(`Failed to recall: ${error}`);
               throw error;
             }
           },
         };
 
         // Tool 3: memory_reflect - Pattern discovery
-        const reflectTool: AnyAgentTool = {
+        const reflectTool: AgentTool = {
           name: "memory_reflect",
           description: "Scan memory hierarchy to discover patterns and skills",
           parameters: Type.Object({}),
@@ -302,7 +302,7 @@ const memoryXPlugin = {
         };
 
         // Tool 4: memory_introspect - Diagnostics
-        const introspectTool: AnyAgentTool = {
+        const introspectTool: AgentTool = {
           name: "memory_introspect",
           description: "Get memory system diagnostics",
           parameters: Type.Object({}),
@@ -329,7 +329,7 @@ const memoryXPlugin = {
         };
 
         // Tool 5: memory_consolidate - Memory evolution
-        const consolidateTool: AnyAgentTool = {
+        const consolidateTool: AgentTool = {
           name: "memory_consolidate",
           description: "Consolidate memories: merge similar themes, resolve conflicts",
           parameters: Type.Object({
@@ -363,7 +363,7 @@ const memoryXPlugin = {
         };
 
         // Tool 6: memory_status - Statistics
-        const statusTool: AnyAgentTool = {
+        const statusTool: AgentTool = {
           name: "memory_status",
           description: "Get memory system statistics",
           parameters: Type.Object({}),
