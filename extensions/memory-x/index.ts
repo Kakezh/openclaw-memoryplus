@@ -11,6 +11,7 @@
  */
 
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
+import type { AnyAgentTool } from "openclaw/plugin-sdk";
 import { Type } from "@sinclair/typebox";
 import type {
   MemoryXConfig,
@@ -19,8 +20,6 @@ import type {
   EpisodeMemory,
   SemanticMemory,
   ThemeMemory,
-  RetrievedEvidence,
-  MemoryDiagnostics,
   PotentialSkill,
 } from "./types.js";
 
@@ -83,17 +82,18 @@ const memoryXPlugin = {
   id: "memory-x",
   name: "Memory-X",
   description: "Unified hierarchical memory system based on xMemory and Memory Taxonomy",
-  kind: "memory",
+  kind: "memory" as const,
 
   register(api: OpenClawPluginApi) {
-    const logger = api.runtime.logging.getSubsystemLogger("memory-x");
+    // Use api.logger instead of api.runtime.logging.getSubsystemLogger
+    const logger = api.logger;
 
     api.registerTool(
       (ctx) => {
         const config: MemoryXConfig = { ...DEFAULT_CONFIG, ...ctx.config };
 
         // Tool 1: memory_remember - Unified write entry
-        const rememberTool = api.runtime.tools.defineTool({
+        const rememberTool: AnyAgentTool = {
           name: "memory_remember",
           description: "Store a memory with automatic hierarchy classification",
           parameters: Type.Object({
@@ -107,7 +107,7 @@ const memoryXPlugin = {
             }),
             confidence: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })),
             entities: Type.Optional(Type.Array(Type.String())),
-            isFactual: Type.Optional(Type.Boolean()), // Taxonomy: factual vs experiential
+            isFactual: Type.Optional(Type.Boolean()),
           }),
           returns: Type.Object({
             success: Type.Boolean(),
@@ -118,7 +118,13 @@ const memoryXPlugin = {
               theme: Type.String(),
             }),
           }),
-          async execute(params) {
+          async execute(params: {
+            content: string;
+            type: "fact" | "preference" | "goal" | "constraint" | "event";
+            confidence?: number;
+            entities?: string[];
+            isFactual?: boolean;
+          }) {
             try {
               const timestamp = Date.now();
               const sessionId = ctx.sessionKey || "default";
@@ -184,10 +190,10 @@ const memoryXPlugin = {
               throw error;
             }
           },
-        });
+        };
 
         // Tool 2: memory_recall - Top-down retrieval
-        const recallTool = api.runtime.tools.defineTool({
+        const recallTool: AnyAgentTool = {
           name: "memory_recall",
           description: "Retrieve memories using top-down hierarchy traversal",
           parameters: Type.Object({
@@ -205,7 +211,13 @@ const memoryXPlugin = {
               evidenceDensity: Type.Number(),
             }),
           }),
-          async execute({ query, maxTokens = 4000 }) {
+          async execute({
+            query,
+            maxTokens = 4000,
+          }: {
+            query: string;
+            maxTokens?: number;
+          }) {
             try {
               // Stage 1: Select themes (simplified - keyword matching)
               const themes = Array.from(hierarchy.themes.values())
@@ -258,10 +270,10 @@ const memoryXPlugin = {
               throw error;
             }
           },
-        });
+        };
 
         // Tool 3: memory_reflect - Pattern discovery
-        const reflectTool = api.runtime.tools.defineTool({
+        const reflectTool: AnyAgentTool = {
           name: "memory_reflect",
           description: "Scan memory hierarchy to discover patterns and skills",
           parameters: Type.Object({}),
@@ -287,10 +299,10 @@ const memoryXPlugin = {
             }
             return { patterns };
           },
-        });
+        };
 
         // Tool 4: memory_introspect - Diagnostics
-        const introspectTool = api.runtime.tools.defineTool({
+        const introspectTool: AnyAgentTool = {
           name: "memory_introspect",
           description: "Get memory system diagnostics",
           parameters: Type.Object({}),
@@ -314,10 +326,10 @@ const memoryXPlugin = {
               health: "healthy",
             };
           },
-        });
+        };
 
         // Tool 5: memory_consolidate - Memory evolution
-        const consolidateTool = api.runtime.tools.defineTool({
+        const consolidateTool: AnyAgentTool = {
           name: "memory_consolidate",
           description: "Consolidate memories: merge similar themes, resolve conflicts",
           parameters: Type.Object({
@@ -325,7 +337,13 @@ const memoryXPlugin = {
             targetIds: Type.Array(Type.String()),
           }),
           returns: Type.Object({ success: Type.Boolean() }),
-          async execute({ action, targetIds }) {
+          async execute({
+            action,
+            targetIds,
+          }: {
+            action: "merge" | "split" | "resolve";
+            targetIds: string[];
+          }) {
             if (action === "merge" && targetIds.length >= 2) {
               // Simplified merge: combine semantics from multiple themes
               const targetTheme = hierarchy.themes.get(targetIds[0]);
@@ -342,10 +360,10 @@ const memoryXPlugin = {
             }
             return { success: true };
           },
-        });
+        };
 
         // Tool 6: memory_status - Statistics
-        const statusTool = api.runtime.tools.defineTool({
+        const statusTool: AnyAgentTool = {
           name: "memory_status",
           description: "Get memory system statistics",
           parameters: Type.Object({}),
@@ -367,7 +385,7 @@ const memoryXPlugin = {
               },
             };
           },
-        });
+        };
 
         return [rememberTool, recallTool, reflectTool, introspectTool, consolidateTool, statusTool];
       },
