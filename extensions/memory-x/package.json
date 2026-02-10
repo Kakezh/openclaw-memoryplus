@@ -1,7 +1,7 @@
 {
-  "name": "@openclaw/memory-skill-miner",
-  "version": "2026.2.1",
-  "description": "OpenClaw automatic skill discovery and generation from conversation patterns",
+  "name": "@openclaw/memory-x",
+  "version": "2026.2.2",
+  "description": "Unified hierarchical memory system based on xMemory and Memory Taxonomy",
   "type": "module",
   "dependencies": {
     "@sinclair/typebox": "0.34.48"
