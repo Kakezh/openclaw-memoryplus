@@ -11,7 +11,7 @@
  */
 
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
-import type { AgentTool, AgentToolResult, TextContent } from "@mariozechner/pi-agent-core";
+import type { AgentTool, AgentToolResult } from "@mariozechner/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import type { Static } from "@sinclair/typebox";
 import type {
@@ -23,6 +23,8 @@ import type {
   ThemeMemory,
   PotentialSkill,
 } from "./types.js";
+
+type TextContent = { type: "text"; text: string };
 
 // Default configuration
 const DEFAULT_CONFIG: MemoryXConfig = {
@@ -103,7 +105,11 @@ const memoryXPlugin = {
 
     api.registerTool(
       (ctx) => {
-        const config: MemoryXConfig = { ...DEFAULT_CONFIG, ...ctx.config };
+        const config: MemoryXConfig = {
+          ...DEFAULT_CONFIG,
+          workspacePath: ctx.workspaceDir || DEFAULT_CONFIG.workspacePath,
+          ...(api.pluginConfig as unknown as Partial<MemoryXConfig>),
+        };
 
         // Tool 1: memory_remember - Unified write entry
         const rememberParamsSchema = Type.Object({

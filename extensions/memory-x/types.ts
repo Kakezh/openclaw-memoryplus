@@ -172,7 +172,7 @@ export interface MemoryStoreConfig {
 // Unified Memory-X Configuration
 // ============================================================================
 
-export interface SkillsConfig {
+export interface MemorySkillsConfig {
   autoMineFromThemes: boolean;
   minThemeFrequency: number;
 }
@@ -203,7 +203,7 @@ export interface MemoryXConfig {
   store: MemoryStoreConfig;
   
   // Skills
-  skills: SkillsConfig;
+  skills: MemorySkillsConfig;
 }
 
 // ============================================================================
