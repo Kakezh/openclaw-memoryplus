@@ -177,6 +177,11 @@ export interface MemorySkillsConfig {
   minThemeFrequency: number;
 }
 
+export interface AutoReflectionConfig {
+  enabled: boolean;
+  intervalMinutes: number; // How often to run background reflection
+}
+
 export interface MemoryXConfig {
   enabled: boolean;
   workspacePath: string;
@@ -190,6 +195,9 @@ export interface MemoryXConfig {
     reorganizeInterval: number;  // Hours
   };
   
+  // Auto Reflection
+  autoReflection?: AutoReflectionConfig;
+
   // Retrieval
   retrieval: TopDownRetrievalConfig;
   

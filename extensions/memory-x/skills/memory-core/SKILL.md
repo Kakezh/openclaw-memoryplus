@@ -39,4 +39,12 @@ It allows the agent to retain experiences, recall context, reflect on patterns, 
 
 1.  **Ingest**: Use `memory_remember` to log important turns.
 2.  **Retrieve**: Use `memory_recall` to ground your responses.
-3.  **Evolve**: If you detect a pattern, use `memory_reflect` then `memory_evolve`.
+3.  **Reflect**: Use `memory_reflect` to identify patterns.
+4.  **Evolve**: Use `memory_evolve` to write new rules based on reflection.
+
+## 🤖 Automatic Evolution
+
+This skill includes a background process that:
+1.  Runs `memory_reflect` periodically (default: every 60 mins).
+2.  If high-confidence patterns are found (e.g., repeated corrections), it automatically suggests or applies updates to `META.md`.
+3.  This ensures the agent evolves even without explicit user prompts to "reflect".

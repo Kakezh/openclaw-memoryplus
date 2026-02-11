@@ -51,6 +51,10 @@ const DEFAULT_CONFIG: MemoryXConfig = {
     autoMineFromThemes: true,
     minThemeFrequency: 3,
   },
+  autoReflection: {
+    enabled: true,
+    intervalMinutes: 60, // Default: Check every hour
+  },
 };
 
 // Helper: Create text content for AgentToolResult
@@ -596,6 +600,39 @@ const memoryXPlugin = {
             return createToolResult({ success: true, path: metaPath });
           },
         };
+
+        // --- Background Auto-Reflection Loop ---
+        if (config.autoReflection?.enabled) {
+            const intervalMs = (config.autoReflection.intervalMinutes || 60) * 60 * 1000;
+            logger.info(`[Memory-X] Auto-reflection enabled. Interval: ${config.autoReflection.intervalMinutes}m`);
+            
+            setInterval(async () => {
+                logger.info("[Memory-X] Running background reflection...");
+                try {
+                    // 1. Reflect
+                    const reflectResult = await reflectTool.execute("auto-reflect", { focus: "skills" });
+                    const suggestions = reflectResult.details.evolutionSuggestions || [];
+                    
+                    // 2. Auto-Evolve (if high confidence)
+                    // Note: For safety, we might only want to LOG suggestions or auto-apply very specific ones.
+                    // For OAMC "Self-Evolution" demo, we will auto-apply high-confidence updates.
+                    
+                    for (const suggestion of suggestions) {
+                        logger.info(`[Memory-X] Auto-applying suggestion: ${suggestion.type}`);
+                        if (suggestion.type === "prompt_update" || suggestion.type === "new_rule") {
+                             await evolveTool.execute("auto-evolve", {
+                                 action: "add_rule",
+                                 content: suggestion.content,
+                                 reason: suggestion.reason + " (Auto-detected)"
+                             });
+                        }
+                        // We skip auto-SOP creation as it usually requires complex content generation not fully present in suggestion object yet.
+                    }
+                } catch (e) {
+                    logger.error(`[Memory-X] Auto-reflection failed: ${e}`);
+                }
+            }, intervalMs);
+        }
 
         return [
           rememberTool,
