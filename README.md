@@ -541,13 +541,32 @@ No configuration needed - the system auto-detects and uses the best available op
 
 ## 📊 Performance
 
-| Metric | Value | Comparison |
-|--------|-------|------------|
-| Token Efficiency | -30% | vs flat retrieval |
-| QA Accuracy | +10% | vs RAG baseline |
-| Evidence Density | 2× | vs top-k retrieval |
-| Search Latency | <10ms | for 10K memories |
-| Memory Overhead | ~1KB | per memory |
+### Theoretical Benefits (from xMemory Paper)
+
+The following metrics are based on the [xMemory research paper](https://arxiv.org/html/2602.02007v1):
+
+| Metric | Value | Description |
+|--------|-------|-------------|
+| Token Efficiency | -30% | Reduction vs flat retrieval through hierarchical filtering |
+| QA Accuracy | +10% | Improvement vs RAG baseline with evidence density scoring |
+| Evidence Density | 2× | Higher relevance vs simple top-k retrieval |
+
+### Implementation Characteristics
+
+| Aspect | Description |
+|--------|-------------|
+| Storage | SQLite with auto-select backend (sql.js / better-sqlite3) |
+| Search | Keyword-based with vector similarity (when embedding provider configured) |
+| Memory Model | 4-level hierarchy with automatic classification |
+
+> ⚠️ **Note**: Actual performance depends on your specific use case, data volume, and hardware. We recommend running your own benchmarks for production deployments.
+
+### Running Benchmarks
+
+```bash
+# TODO: Add benchmark scripts
+# pnpm bench
+```
 
 ---
 
