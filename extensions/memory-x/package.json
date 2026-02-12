@@ -1,10 +1,27 @@
 {
   "name": "@openclaw/memory-x",
-  "version": "2026.2.2",
+  "version": "2026.2.3",
   "description": "Unified hierarchical memory system based on xMemory and Memory Taxonomy",
   "type": "module",
+  "keywords": [
+    "openclaw",
+    "memory",
+    "agent",
+    "ai",
+    "hierarchy",
+    "knowledge-graph"
+  ],
+  "author": "Kakezh",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Kakezh/openclaw-memoryplus"
+  },
   "dependencies": {
     "@sinclair/typebox": "0.34.48",
+    "sql.js": "^1.10.3"
+  },
+  "optionalDependencies": {
     "better-sqlite3": "^11.0.0"
   },
   "devDependencies": {
@@ -22,12 +39,20 @@
     "openclaw.plugin.json"
   ],
   "main": "./dist/index.js",
+  "exports": {
+    ".": "./dist/index.js",
+    "./store": "./dist/store/index.js",
+    "./types": "./dist/types.js"
+  },
   "scripts": {
-    "build": "tsup index.ts --format esm --dts --out-dir dist"
+    "build": "tsup index.ts --format esm --dts --out-dir dist",
+    "prepack": "pnpm build"
   },
   "openclaw": {
     "extensions": [
       "./dist/index.js"
-    ]
+    ],
+    "hotReload": true,
+    "minVersion": "2026.1.26"
   }
 }

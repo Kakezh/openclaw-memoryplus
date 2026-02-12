@@ -166,18 +166,40 @@ type RelationType =
 
 ## 📦 Installation & Setup
 
-### 1. Install Plugin
+### Option 1: Hot-Pluggable Installation (Recommended)
+
+```bash
+# Install from npm (when published)
+openclaw plugins install @openclaw/memory-x
+
+# Or install from local
+openclaw plugins install ./extensions/memory-x
+
+# No restart required - hot reload enabled
+```
+
+### Option 2: Development Installation
 
 ```bash
 cd extensions/memory-x
 pnpm install && pnpm build
-pnpm pack
 
-# Install into OpenClaw
-openclaw plugins install ./openclaw-memory-x-2026.2.3.tgz
+# Link to OpenClaw
+openclaw plugins link .
 ```
 
-### 2. Verify Installation
+### Storage Backend
+
+Memory-X automatically selects the best storage backend:
+
+| Backend | Performance | Portability | Requirements |
+|---------|-------------|-------------|--------------|
+| **better-sqlite3** | ⚡ Fastest | Platform-specific | Native compilation |
+| **sql.js** | 🔄 Good | Cross-platform | Pure JavaScript |
+
+No configuration needed - the plugin auto-detects and uses the best available option.
+
+### Verify Installation
 
 ```bash
 openclaw agent run "memory_status({})"
@@ -235,7 +257,7 @@ openclaw agent run "memory_status({})"
 
 ---
 
-## �📚 References
+## �� References
 
 1. **xMemory**: [Beyond RAG for Agent Memory](https://arxiv.org/html/2602.02007v1)
 2. **Memory Taxonomy**: [Memory in the Age of AI Agents](https://arxiv.org/abs/2512.13564)
