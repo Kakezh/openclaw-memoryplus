@@ -1,24 +1,105 @@
-# OpenClaw Memory-X
+# @kakezh/memory-x
 
-> Unified hierarchical memory system based on xMemory and Memory Taxonomy.
-> "The unified memory layer for autonomous agents."
+[![npm version](https://img.shields.io/npm/v/@kakezh/memory-x.svg)](https://github.com/Kakezh/openclaw-memoryplus/packages/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![GitHub Packages](https://img.shields.io/badge/Package-GitHub%20Packages-blue)](https://github.com/Kakezh/openclaw-memoryplus/pkgs/npm/memory-x)
 
-## 📋 Project Overview
+> **Framework-agnostic hierarchical memory system for AI agents**
+> 
+> Works with OpenClaw, LangChain, or standalone. Zero configuration required.
 
-This project is a **refactored** memory system for [OpenClaw](https://github.com/openclaw), consolidating three separate extensions into a single unified `memory-x` extension with advanced features:
+---
 
-- **SQLite Storage**: High-performance database with WAL mode
-- **Vector Index**: Semantic similarity search
-- **Forgetting Mechanism**: Ebbinghaus curve-based memory lifecycle
-- **Conflict Detection**: Automatic conflict detection and resolution
-- **Knowledge Graph**: Entity-relationship management
-- **Multi-Hop Reasoning**: Complex inference across memory hierarchy
+## 📋 Features
+
+- **Framework-Agnostic**: Use with any agent framework or standalone
+- **Hierarchical Storage**: 4-level memory hierarchy (Original → Episode → Semantic → Theme)
+- **Zero Config**: Works out of the box, no setup required
+- **Cross-Platform**: Pure JavaScript, no native dependencies required
+- **Type-Safe**: Full TypeScript support with detailed types
+- **Advanced Features**: Knowledge graph, multi-hop reasoning, forgetting mechanism
+
+---
+
+## 📦 Installation
+
+### From GitHub Packages
+
+```bash
+# Create .npmrc file (one-time setup)
+echo "@kakezh:registry=https://npm.pkg.github.com" > ~/.npmrc
+
+# Install
+npm install @kakezh/memory-x
+```
+
+### From Source
+
+```bash
+git clone https://github.com/Kakezh/openclaw-memoryplus.git
+cd openclaw-memoryplus/extensions/memory-x
+pnpm install && pnpm build
+```
+
+---
+
+## 🚀 Quick Start
+
+### Standalone Usage
+
+```typescript
+import { MemoryEngine } from '@kakezh/memory-x';
+
+// Create engine (zero config)
+const memory = new MemoryEngine();
+await memory.init();
+
+// Store a memory
+await memory.remember("User prefers dark mode", {
+  type: "preference",
+  confidence: 0.9,
+  entities: ["User"]
+});
+
+// Recall memories
+const result = await memory.recall("user preferences");
+console.log(result.evidence);
+
+// Get statistics
+const stats = memory.stats();
+console.log(stats);
+```
+
+### Using Tools Interface
+
+```typescript
+import { createMemoryX } from '@kakezh/memory-x';
+
+const adapter = await createMemoryX();
+
+// Get all tools
+const tools = adapter.getTools();
+
+// Execute a tool
+const result = await adapter.execute('memory_remember', {
+  content: "User likes TypeScript",
+  type: "preference"
+});
+```
+
+### With OpenClaw
+
+```typescript
+import { createOpenClawPlugin } from '@kakezh/memory-x/adapters/openclaw';
+
+export default createOpenClawPlugin({
+  workspacePath: "./data"
+});
+```
 
 ---
 
 ## 🏗️ Architecture
-
-### System Overview
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -26,30 +107,19 @@ This project is a **refactored** memory system for [OpenClaw](https://github.com
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
 │  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │                        Tool Layer (10 Tools)                         │    │
-│  │  remember | recall | reflect | reason | graph | forget | ...       │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│                                    │                                         │
-│  ┌─────────────────────────────────┼───────────────────────────────────┐    │
-│  │                          Core Layer                                  │    │
+│  │                     Framework-Agnostic Core                          │    │
 │  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                  │    │
-│  │  │   SQLite    │  │   Vector    │  │   Dynamics  │                  │    │
-│  │  │   Store     │  │   Index     │  │  (Forget)   │                  │    │
+│  │  │   Memory    │  │   Vector    │  │   Dynamics  │                  │    │
+│  │  │   Engine    │  │   Index     │  │  (Forget)   │                  │    │
 │  │  └─────────────┘  └─────────────┘  └─────────────┘                  │    │
 │  └─────────────────────────────────────────────────────────────────────┘    │
 │                                    │                                         │
 │  ┌─────────────────────────────────┼───────────────────────────────────┐    │
-│  │                        Reasoning Layer                               │    │
-│  │  ┌───────────────────┐  ┌───────────────────┐                      │    │
-│  │  │  Knowledge Graph  │  │  Multi-Hop Engine │                      │    │
-│  │  └───────────────────┘  └───────────────────┘                      │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│                                    │                                         │
-│  ┌─────────────────────────────────┼───────────────────────────────────┐    │
-│  │                         Storage Layer                                │    │
-│  │  ┌─────────────────────────────────────────────────────────────┐   │    │
-│  │  │  SQLite Database (.memory/memory.db)                        │   │    │
-│  │  └─────────────────────────────────────────────────────────────┘   │    │
+│  │                          Adapters Layer                              │    │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                  │    │
+│  │  │  Generic    │  │  OpenClaw   │  │  LangChain  │                  │    │
+│  │  │  Adapter    │  │  Adapter    │  │  Adapter    │                  │    │
+│  │  └─────────────┘  └─────────────┘  └─────────────┘                  │    │
 │  └─────────────────────────────────────────────────────────────────────┘    │
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -58,206 +128,139 @@ This project is a **refactored** memory system for [OpenClaw](https://github.com
 ### Directory Structure
 
 ```
-extensions/memory-x/
-├── index.ts                    # Main entry: Plugin registration + 10 tools
-├── types.ts                    # Type definitions: 4-level memory + 3D taxonomy
+memory-x/
+├── core/                      # Framework-agnostic core
+│   ├── engine.ts              # MemoryEngine class
+│   ├── types.ts               # Type definitions
+│   └── index.ts               # Core exports
 │
-├── store/                      # Storage Layer
-│   ├── sqlite-store.ts         # SQLite database management
-│   └── vector-index.ts         # Vector index + semantic search
+├── adapters/                  # Framework adapters
+│   ├── generic.ts             # Generic adapter (any project)
+│   ├── openclaw.ts            # OpenClaw adapter
+│   └── index.ts               # Adapter exports
 │
-├── dynamics/                   # Dynamic Management Layer
-│   ├── forgetting.ts           # Forgetting mechanism (Ebbinghaus)
-│   └── conflict.ts             # Conflict detection & resolution
+├── store/                     # Storage implementations
+│   ├── sqlite-store.ts        # Native SQLite (better-sqlite3)
+│   └── sqljs-store.ts         # Pure JS SQLite (sql.js)
 │
-└── reasoning/                  # Reasoning Layer
-    ├── knowledge-graph.ts      # Entity-relationship graph
-    └── multi-hop.ts            # Multi-hop reasoning engine
+├── dynamics/                  # Memory lifecycle
+│   ├── forgetting.ts          # Ebbinghaus forgetting curve
+│   └── conflict.ts            # Conflict detection
+│
+└── reasoning/                 # Advanced reasoning
+    ├── knowledge-graph.ts     # Entity-relationship graph
+    └── multi-hop.ts           # Multi-hop inference
 ```
 
 ---
 
 ## 🧠 Core Concepts
 
-### 1. Four-Level Hierarchy (xMemory)
+### Four-Level Hierarchy
 
 ```
 Level 4: Theme (主题)
-┌─────────────────────────────────────────────────────────────────────┐
-│  High-level concepts: User preferences, projects, domain knowledge  │
-│  Storage: .memory/themes/{id}.json                                  │
-└─────────────────────────────────────────────────────────────────────┘
-                                    ▲
-                                    │ contains
+└── High-level concepts: User preferences, projects, domains
+
 Level 3: Semantic (语义)
-┌─────────────────────────────────────────────────────────────────────┐
-│  Reusable facts: preferences, goals, constraints, events            │
-│  Storage: .memory/semantics/{id}.json                               │
-└─────────────────────────────────────────────────────────────────────┘
-                                    ▲
-                                    │ extracted from
+└── Reusable facts: preferences, goals, constraints
+
 Level 2: Episode (片段)
-┌─────────────────────────────────────────────────────────────────────┐
-│  Contiguous message blocks: conversation segments, task context     │
-│  Storage: .memory/episodes/{id}.json                                │
-└─────────────────────────────────────────────────────────────────────┘
-                                    ▲
-                                    │ contains
+└── Conversation segments, task context
+
 Level 1: Original (原始)
-┌─────────────────────────────────────────────────────────────────────┐
-│  Raw messages: User input, Agent responses                          │
-│  Storage: memory/YYYY-MM-DD.md (Canonical daily logs)               │
-└─────────────────────────────────────────────────────────────────────┘
+└── Raw messages: User input, Agent responses
 ```
 
-### 2. 3D Taxonomy (Memory Classification)
-
-```
-Form × Function × Dynamics
-
-Form: Where does memory exist?
-├── token: Text tokens in context
-├── parametric: Model weights
-└── latent: Hidden states
-
-Function: What is memory used for?
-├── factual: World objective truth
-├── experiential: Personal history
-└── working: Temporary buffer
-
-Dynamics: How does memory evolve?
-├── Forgetting curve (Ebbinghaus)
-├── Memory consolidation
-├── Conflict resolution
-└── Memory reconstruction
-```
-
-### 3. Knowledge Graph
+### Memory Types
 
 ```typescript
-// Entity Types
-type EntityType = 'person' | 'organization' | 'location' | 'concept' | 'event' | 'object' | 'topic';
-
-// Relation Types
-type RelationType = 
-  | 'related_to' | 'part_of' | 'has_property'
-  | 'prefers' | 'dislikes' | 'works_at'
-  | 'located_in' | 'occurred_at' | 'caused_by' | 'follows';
+type MemoryType = 
+  | 'fact'        // Objective truth
+  | 'preference'  // User preferences
+  | 'goal'        // Goals and objectives
+  | 'constraint'  // Rules and limits
+  | 'event';      // Time-based events
 ```
 
 ---
 
-## 🛠️ Unified Tool API (10 Tools)
+## 🛠️ API Reference
 
-| Tool | Description | Example |
-|------|-------------|---------|
-| `memory_remember` | Store memory with auto-classification | `memory_remember({ content: "...", type: "preference" })` |
-| `memory_recall` | Vector-based retrieval | `memory_recall({ query: "user preferences" })` |
-| `memory_reflect` | Discover patterns from themes | `memory_reflect({ focus: "skills" })` |
-| `memory_introspect` | System diagnostics | `memory_introspect({})` |
-| `memory_consolidate` | Merge/split themes | `memory_consolidate({ action: "merge", targetIds: [...] })` |
-| `memory_status` | Statistics and metrics | `memory_status({})` |
-| `memory_evolve` | Self-modify via META.md | `memory_evolve({ action: "add_rule", content: "..." })` |
-| `memory_forget` | Memory lifecycle management | `memory_forget({ action: "archive", threshold: 0.3 })` |
-| `memory_reason` | Multi-hop reasoning | `memory_reason({ query: "...", maxHops: 3 })` |
-| `memory_graph` | Knowledge graph queries | `memory_graph({ action: "path", entity: "A", target: "B" })` |
+### MemoryEngine
 
----
-
-## 📦 Installation & Setup
-
-### Option 1: Hot-Pluggable Installation (Recommended)
-
-```bash
-# Install from npm (when published)
-openclaw plugins install @openclaw/memory-x
-
-# Or install from local
-openclaw plugins install ./extensions/memory-x
-
-# No restart required - hot reload enabled
+```typescript
+class MemoryEngine {
+  constructor(config?: MemoryConfig);
+  
+  // Core methods
+  init(): Promise<void>;
+  remember(content: string, options?: RememberOptions): Promise<RememberResult>;
+  recall(query: string, options?: RecallOptions): Promise<RecallResult>;
+  reflect(): Promise<ReflectResult>;
+  stats(): MemoryStats;
+  
+  // Tool interface
+  getTools(): MemoryTool[];
+  executeTool(name: string, params: any): Promise<MemoryToolResult>;
+  
+  // Lifecycle
+  close(): void;
+}
 ```
 
-### Option 2: Development Installation
+### Tools
 
-```bash
-cd extensions/memory-x
-pnpm install && pnpm build
-
-# Link to OpenClaw
-openclaw plugins link .
-```
-
-### Storage Backend
-
-Memory-X automatically selects the best storage backend:
-
-| Backend | Performance | Portability | Requirements |
-|---------|-------------|-------------|--------------|
-| **better-sqlite3** | ⚡ Fastest | Platform-specific | Native compilation |
-| **sql.js** | 🔄 Good | Cross-platform | Pure JavaScript |
-
-No configuration needed - the plugin auto-detects and uses the best available option.
-
-### Verify Installation
-
-```bash
-openclaw agent run "memory_status({})"
-```
+| Tool | Description |
+|------|-------------|
+| `memory_remember` | Store memory with auto-classification |
+| `memory_recall` | Retrieve memories using semantic search |
+| `memory_reflect` | Discover patterns from themes |
+| `memory_status` | Get memory system statistics |
 
 ---
 
 ## ⚙️ Configuration
 
-```json
-{
-  "plugins": {
-    "entries": {
-      "memory-x": {
-        "enabled": true,
-        "config": {
-          "hierarchy": {
-            "maxThemeSize": 50,
-            "minThemeCoherence": 0.7,
-            "autoReorganize": true,
-            "reorganizeInterval": 24
-          },
-          "retrieval": {
-            "themeTopK": 3,
-            "semanticTopK": 5,
-            "uncertaintyThreshold": 0.3,
-            "maxTokens": 4000
-          },
-          "skills": {
-            "autoMineFromThemes": true,
-            "minThemeFrequency": 3
-          },
-          "autoReflection": {
-            "enabled": true,
-            "intervalMinutes": 60
-          }
-        }
-      }
-    }
-  }
+```typescript
+interface MemoryConfig {
+  workspacePath?: string;      // Default: "./memory-data"
+  storage?: "sqlite" | "memory"; // Default: "sqlite"
+  hierarchy?: {
+    maxThemeSize?: number;     // Default: 50
+    minThemeCoherence?: number; // Default: 0.7
+    autoReorganize?: boolean;  // Default: true
+  };
+  retrieval?: {
+    themeTopK?: number;        // Default: 3
+    semanticTopK?: number;     // Default: 5
+    maxTokens?: number;        // Default: 4000
+  };
 }
 ```
 
 ---
 
-## � Performance
+## 📊 Performance
 
 | Metric | Value |
 |--------|-------|
 | Token Efficiency | -30% vs flat retrieval |
 | QA Accuracy | +10% vs RAG baseline |
 | Evidence Density | 2× vs top-k retrieval |
-| Storage | SQLite with WAL mode |
+| Storage | SQLite (auto-select backend) |
 | Search | Vector similarity + keyword fallback |
 
 ---
 
-## �� References
+## 📚 Documentation
+
+- [Integration Guide](./extensions/memory-x/INTEGRATION.md) - How to integrate with different frameworks
+- [Architecture](./MEMORY_ARCHITECTURE.md) - Detailed architecture documentation
+
+---
+
+## 📖 References
 
 1. **xMemory**: [Beyond RAG for Agent Memory](https://arxiv.org/html/2602.02007v1)
 2. **Memory Taxonomy**: [Memory in the Age of AI Agents](https://arxiv.org/abs/2512.13564)
@@ -267,22 +270,30 @@ openclaw agent run "memory_status({})"
 
 ## 📝 Changelog
 
-### v2026.2.3 (Current)
-- ✅ SQLite storage with WAL mode
-- ✅ Vector index for semantic search
-- ✅ Forgetting mechanism (Ebbinghaus curve)
-- ✅ Conflict detection & resolution
-- ✅ Knowledge graph integration
-- ✅ Multi-hop reasoning engine
-- ✅ 10 unified tools
+### v1.0.0 (Current)
+- ✅ Framework-agnostic architecture
+- ✅ Core + Adapters separation
+- ✅ Published to GitHub Packages
+- ✅ Zero configuration setup
+- ✅ Cross-platform support (sql.js)
+- ✅ Full TypeScript support
 
-### v2026.2.2
-- Initial unified memory-x extension
-- Four-level hierarchy implementation
-- 3D taxonomy classification
+### v2026.2.3
+- SQLite storage with WAL mode
+- Vector index for semantic search
+- Forgetting mechanism (Ebbinghaus curve)
+- Conflict detection & resolution
+- Knowledge graph integration
+- Multi-hop reasoning engine
+
+---
+
+## 📄 License
+
+MIT © Kakezh
 
 ---
 
 **Author**: Kakezh  
-**Version**: 2026.2.3  
-**Date**: 2026-02-12
+**Repository**: [github.com/Kakezh/openclaw-memoryplus](https://github.com/Kakezh/openclaw-memoryplus)  
+**Package**: [@kakezh/memory-x](https://github.com/Kakezh/openclaw-memoryplus/pkgs/npm/memory-x)
