@@ -1,30 +1,39 @@
 /**
  * Memory-X: Unified Hierarchical Memory System
  * Based on xMemory (Four-level Hierarchy) and Memory Taxonomy (3D Classification)
+ * 
+ * V2 Improvements:
+ * - SQLite storage for better performance
+ * - Vector index for semantic search
+ * - Forgetting mechanism
+ * - Conflict detection
  */
 
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import type { AgentTool, AgentToolResult } from "@mariozechner/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import type { Static } from "@sinclair/typebox";
-import fs from "fs";
 import path from "path";
+import fs from "fs";
 import type {
   MemoryXConfig,
-  MemoryHierarchy,
   OriginalMemory,
   EpisodeMemory,
   SemanticMemory,
   ThemeMemory,
+  AnyMemory,
 } from "./types.js";
+import { SQLiteMemoryStore } from "./store/sqlite-store.js";
+import { VectorIndex, SimpleEmbeddingProvider } from "./store/vector-index.js";
+import { ForgettingMechanism } from "./dynamics/forgetting.js";
+import { ConflictDetector } from "./dynamics/conflict.js";
 
 type TextContent = { type: "text"; text: string };
 
-// Default configuration
 const DEFAULT_CONFIG: MemoryXConfig = {
   enabled: true,
   workspacePath: "",
-  dbPath: ".memory/index.json", // Derived store index
+  dbPath: ".memory/memory.db",
   hierarchy: {
     maxThemeSize: 50,
     minThemeCoherence: 0.7,
@@ -53,16 +62,14 @@ const DEFAULT_CONFIG: MemoryXConfig = {
   },
   autoReflection: {
     enabled: true,
-    intervalMinutes: 60, // Default: Check every hour
+    intervalMinutes: 60,
   },
 };
 
-// Helper: Create text content for AgentToolResult
 function createTextContent(text: string): TextContent[] {
   return [{ type: "text", text }];
 }
 
-// Helper: Create AgentToolResult
 function createToolResult<T>(details: T): AgentToolResult<T> {
   return {
     content: createTextContent(JSON.stringify(details, null, 2)),
@@ -70,15 +77,12 @@ function createToolResult<T>(details: T): AgentToolResult<T> {
   };
 }
 
-// Helper: Estimate token count
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
-// Helper: Get Today's Date YYYY-MM-DD
 function getTodayDate(): string {
-  const now = new Date();
-  return now.toISOString().split("T")[0];
+  return new Date().toISOString().split("T")[0];
 }
 
 const memoryXPlugin = {
@@ -98,92 +102,17 @@ const memoryXPlugin = {
           ...(api.pluginConfig as unknown as Partial<MemoryXConfig>),
         };
 
-        // Initialize Directories
-        const memoryDir = path.join(config.workspacePath, "memory"); // Canonical daily logs
-        const dotMemoryDir = path.join(config.workspacePath, ".memory"); // Derived store
-
-        [memoryDir, dotMemoryDir, 
-         path.join(dotMemoryDir, "episodes"), 
-         path.join(dotMemoryDir, "semantics"), 
-         path.join(dotMemoryDir, "themes")].forEach(dir => {
-          if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-        });
-
-        // Initialize Derived Index
-        const indexParams = {
-            originals: new Map<string, string>(), // ID -> File Path
-            episodes: new Map<string, string>(),
-            semantics: new Map<string, string>(),
-            themes: new Map<string, string>(),
-        };
-
-        // Load Index if exists (Simplified)
-        // In a real implementation, we would rebuild this from files if missing.
-        // For now, we rely on in-memory cache for the session, or simple JSON load.
-        // Note: This simple index doesn't persist properly across complex reloads without full sync logic.
-        // We will implement a basic "write-through" cache.
-
-        function saveMemory(level: "original" | "episode" | "semantic" | "theme", id: string, data: any) {
-            let filePath = "";
-            if (level === "original") {
-                // Append to daily log (Canonical)
-                const date = getTodayDate();
-                filePath = path.join(memoryDir, `${date}.md`);
-                const logEntry = `\n- [${new Date().toLocaleTimeString()}] ${data.content} <!-- id:${id} -->`;
-                fs.appendFileSync(filePath, logEntry);
-                indexParams.originals.set(id, filePath);
-            } else if (level === "theme") {
-                // Save to .memory/themes/ID.json (Derived)
-                filePath = path.join(dotMemoryDir, "themes", `${id}.json`);
-                fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
-                indexParams.themes.set(id, filePath);
-            } else {
-                // Save to .memory/{level}s/ID.json
-                filePath = path.join(dotMemoryDir, `${level}s`, `${id}.json`);
-                fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
-                if (level === "episode") indexParams.episodes.set(id, filePath);
-                if (level === "semantic") indexParams.semantics.set(id, filePath);
-            }
-        }
-        
-        // Helper: Find Theme
-        function findTheme(keyword: string): ThemeMemory | null {
-            // Brute force search in .memory/themes/
-            const themeFiles = fs.readdirSync(path.join(dotMemoryDir, "themes"));
-            for (const file of themeFiles) {
-                const content = fs.readFileSync(path.join(dotMemoryDir, "themes", file), "utf-8");
-                const theme = JSON.parse(content) as ThemeMemory;
-                if (theme.name.toLowerCase().includes(keyword.toLowerCase())) return theme;
-            }
-            return null;
+        const memoryDir = path.join(config.workspacePath, "memory");
+        if (!fs.existsSync(memoryDir)) {
+          fs.mkdirSync(memoryDir, { recursive: true });
         }
 
-        // Helper: Find or create theme
-        function findOrCreateTheme(semantic: SemanticMemory): ThemeMemory {
-          const entities = semantic.entityRefs || [];
-          for (const entity of entities) {
-              const existing = findTheme(entity);
-              if (existing) {
-                  existing.semanticIds.push(semantic.id);
-                  existing.updatedAt = Date.now();
-                  saveMemory("theme", existing.id, existing);
-                  return existing;
-              }
-          }
+        const store = new SQLiteMemoryStore(config.workspacePath);
+        const vectorIndex = new VectorIndex(store, new SimpleEmbeddingProvider());
+        const forgetting = new ForgettingMechanism(store);
+        const conflictDetector = new ConflictDetector(store, vectorIndex);
 
-          const themeName = entities[0] || `Theme-${Date.now()}`;
-          const theme: ThemeMemory = {
-            id: `theme-${Date.now()}`,
-            name: themeName,
-            description: `Theme for ${themeName}`,
-            semanticIds: [semantic.id],
-            coherenceScore: semantic.confidence,
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-          };
-          saveMemory("theme", theme.id, theme);
-          return theme;
-        }
+        logger.info(`[Memory-X] SQLite store initialized at: ${store.getPath()}`);
 
         // Tool 1: memory_remember
         const rememberParamsSchema = Type.Object({
@@ -203,12 +132,8 @@ const memoryXPlugin = {
         type RememberParams = Static<typeof rememberParamsSchema>;
         type RememberResult = {
           success: boolean;
-          ids: {
-            original: string;
-            episode: string;
-            semantic: string;
-            theme: string;
-          };
+          ids: { original: string; episode: string; semantic: string; theme: string };
+          conflicts?: { id: string; reason: string }[];
         };
 
         const rememberTool: AgentTool<typeof rememberParamsSchema, RememberResult> = {
@@ -216,16 +141,13 @@ const memoryXPlugin = {
           label: "Remember",
           description: "Store a memory with automatic hierarchy classification",
           parameters: rememberParamsSchema,
-          async execute(
-            _toolCallId: string,
-            params: RememberParams,
-            _signal?: AbortSignal
-          ): Promise<AgentToolResult<RememberResult>> {
+          async execute(_toolCallId: string, params: RememberParams): Promise<AgentToolResult<RememberResult>> {
             try {
               const timestamp = Date.now();
               const sessionId = ctx.sessionKey || "default";
+              const conflicts: { id: string; reason: string }[] = [];
 
-              // Level 1: Original (Canonical Log)
+              // Level 1: Original
               const original: OriginalMemory = {
                 id: `orig-${timestamp}`,
                 content: params.content,
@@ -234,9 +156,8 @@ const memoryXPlugin = {
                 speaker: "user",
                 metadata: { importance: params.confidence || 0.5 },
               };
-              saveMemory("original", original.id, original);
 
-              // Level 2: Episode (Derived)
+              // Level 2: Episode
               const episode: EpisodeMemory = {
                 id: `ep-${timestamp}`,
                 summary: params.content.substring(0, 100),
@@ -246,9 +167,8 @@ const memoryXPlugin = {
                 boundaryType: "topic",
                 coherenceScore: params.confidence || 0.5,
               };
-              saveMemory("episode", episode.id, episode);
 
-              // Level 3: Semantic (Derived)
+              // Level 3: Semantic
               const semantic: SemanticMemory = {
                 id: `sem-${timestamp}`,
                 content: params.content,
@@ -257,12 +177,28 @@ const memoryXPlugin = {
                 sourceEpisodes: [episode.id],
                 entityRefs: params.entities || [],
               };
-              saveMemory("semantic", semantic.id, semantic);
 
-              // Level 4: Theme (Derived + Curated)
-              const theme = findOrCreateTheme(semantic);
-              
-              logger.info(`Memory stored: ${original.id}`);
+              // Check for conflicts
+              const detectedConflicts = await conflictDetector.detect(semantic);
+              if (detectedConflicts.length > 0) {
+                conflicts.push(...detectedConflicts.map((c) => ({ id: c.id, reason: c.reason })));
+              }
+
+              // Level 4: Find or create theme
+              const theme = findOrCreateTheme(semantic, store);
+
+              // Save all levels in transaction
+              store.transaction(() => {
+                store.save(original);
+                store.save(episode);
+                store.save(semantic);
+                store.save(theme);
+              });
+
+              // Index for vector search
+              await vectorIndex.indexMemory(semantic.id, semantic.content);
+
+              logger.info(`[Memory-X] Memory stored: ${original.id}`);
 
               return createToolResult({
                 success: true,
@@ -272,9 +208,10 @@ const memoryXPlugin = {
                   semantic: semantic.id,
                   theme: theme.id,
                 },
+                conflicts: conflicts.length > 0 ? conflicts : undefined,
               });
             } catch (error) {
-              logger.error(`Failed to remember: ${error}`);
+              logger.error(`[Memory-X] Failed to remember: ${error}`);
               throw error;
             }
           },
@@ -290,90 +227,69 @@ const memoryXPlugin = {
         type RecallResult = {
           evidence: {
             themes: { id: string; name: string }[];
-            semantics: { id: string; content: string }[];
+            semantics: { id: string; content: string; score?: number }[];
             episodes: { id: string; summary: string }[];
           };
-          metrics: {
-            totalTokens: number;
-            evidenceDensity: number;
-          };
+          metrics: { totalTokens: number; evidenceDensity: number };
         };
 
         const recallTool: AgentTool<typeof recallParamsSchema, RecallResult> = {
           name: "memory_recall",
           label: "Recall",
-          description: "Retrieve memories using top-down hierarchy traversal",
+          description: "Retrieve memories using top-down hierarchy traversal with vector search",
           parameters: recallParamsSchema,
-          async execute(
-            _toolCallId: string,
-            params: RecallParams,
-            _signal?: AbortSignal
-          ): Promise<AgentToolResult<RecallResult>> {
+          async execute(_toolCallId: string, params: RecallParams): Promise<AgentToolResult<RecallResult>> {
             try {
               const { query } = params;
-              const keywords = query.toLowerCase().split(/\s+/).filter(w => w.length > 2);
-              
-              const themes: ThemeMemory[] = [];
-              const semantics: SemanticMemory[] = [];
-              const episodes: EpisodeMemory[] = [];
 
-              // Search Themes (Filesystem Scan)
-              const themeFiles = fs.readdirSync(path.join(dotMemoryDir, "themes"));
-              for (const file of themeFiles) {
-                  const t = JSON.parse(fs.readFileSync(path.join(dotMemoryDir, "themes", file), "utf-8")) as ThemeMemory;
-                  if (keywords.some(k => t.name.toLowerCase().includes(k) || t.description.toLowerCase().includes(k))) {
-                      themes.push(t);
-                  }
-              }
+              // Vector search for semantics
+              const semanticResults = await vectorIndex.search(query, { level: "semantic", limit: 10 });
+              const semantics = semanticResults.map((r) => ({
+                id: r.memory.id,
+                content: (r.memory as SemanticMemory).content,
+                score: r.score,
+              }));
 
-              // Search Semantics (Filesystem Scan)
-              // Note: This is inefficient for large datasets but works for "small pilot".
-              const semFiles = fs.readdirSync(path.join(dotMemoryDir, "semantics"));
-              for (const file of semFiles) {
-                  const s = JSON.parse(fs.readFileSync(path.join(dotMemoryDir, "semantics", file), "utf-8")) as SemanticMemory;
-                  if (keywords.some(k => s.content.toLowerCase().includes(k))) {
-                      semantics.push(s);
-                  }
-              }
-              // Add semantics from themes
-              for (const theme of themes) {
-                  for (const sid of theme.semanticIds) {
-                      const sPath = path.join(dotMemoryDir, "semantics", `${sid}.json`);
-                      if (fs.existsSync(sPath)) {
-                          semantics.push(JSON.parse(fs.readFileSync(sPath, "utf-8")));
-                      }
-                  }
+              // Get themes from semantics
+              const themeIds = new Set<string>();
+              for (const result of semanticResults) {
+                const semantic = result.memory as SemanticMemory;
+                const themes = store.search(semantic.content, { level: "theme", limit: 1 });
+                themes.forEach((t) => themeIds.add(t.id));
               }
 
-              // Expand Episodes
-              for (const sem of semantics.slice(0, 10)) {
-                  for (const eid of sem.sourceEpisodes) {
-                      const ePath = path.join(dotMemoryDir, "episodes", `${eid}.json`);
-                      if (fs.existsSync(ePath)) {
-                          episodes.push(JSON.parse(fs.readFileSync(ePath, "utf-8")));
-                      }
-                  }
+              const themes = Array.from(themeIds)
+                .map((id) => store.get<ThemeMemory>(id, "theme"))
+                .filter((t): t is ThemeMemory => t !== null)
+                .map((t) => ({ id: t.id, name: t.name }));
+
+              // Expand to episodes
+              const episodeIds = new Set<string>();
+              for (const result of semanticResults) {
+                const semantic = result.memory as SemanticMemory;
+                semantic.sourceEpisodes.forEach((eid) => episodeIds.add(eid));
               }
+
+              const episodes = Array.from(episodeIds)
+                .map((id) => store.get<EpisodeMemory>(id, "episode"))
+                .filter((e): e is EpisodeMemory => e !== null)
+                .map((e) => ({ id: e.id, summary: e.summary }));
 
               const totalTokens = estimateTokens(
-                themes.map((t) => t.description).join(" ") +
+                themes.map((t) => t.name).join(" ") +
                 semantics.map((s) => s.content).join(" ") +
                 episodes.map((e) => e.summary).join(" ")
               );
 
               return createToolResult({
-                evidence: {
-                  themes: themes.map((t) => ({ id: t.id, name: t.name })),
-                  semantics: semantics.map((s) => ({ id: s.id, content: s.content })),
-                  episodes: episodes.map((e) => ({ id: e.id, summary: e.summary })),
-                },
+                evidence: { themes, semantics, episodes },
                 metrics: {
                   totalTokens,
                   evidenceDensity: semantics.length / Math.max(1, totalTokens / 100),
                 },
               });
             } catch (error) {
-              logger.error(`Failed to recall: ${error}`);
+              logger.error(`[Memory-X] Failed to recall: ${error}`);
               throw error;
             }
           },
@@ -383,64 +299,43 @@ const memoryXPlugin = {
         const reflectParamsSchema = Type.Object({
           focus: Type.Optional(Type.Enum({ skills: "skills", evolution: "evolution", general: "general" })),
         });
+
         type ReflectResult = {
-          patterns: {
-            themeId: string;
-            themeName: string;
-            occurrenceCount: number;
-            suggestedSkill: string;
-            context: string[];
-          }[];
-          evolutionSuggestions?: {
-             type: "prompt_update" | "new_rule";
-             content: string;
-             reason: string;
-          }[];
+          patterns: { themeId: string; themeName: string; occurrenceCount: number; suggestedSkill: string }[];
+          evolutionSuggestions?: { type: "prompt_update" | "new_rule"; content: string; reason: string }[];
         };
 
         const reflectTool: AgentTool<typeof reflectParamsSchema, ReflectResult> = {
           name: "memory_reflect",
           label: "Reflect",
-          description: "Scan memory hierarchy to discover patterns, mine skills, and suggest self-evolution",
+          description: "Scan memory hierarchy to discover patterns and suggest self-evolution",
           parameters: reflectParamsSchema,
-          async execute(
-            _toolCallId: string,
-            params: Static<typeof reflectParamsSchema>,
-            _signal?: AbortSignal
-          ): Promise<AgentToolResult<ReflectResult>> {
-            const patterns = [];
-            const evolutionSuggestions = [];
-            const themeFiles = fs.readdirSync(path.join(dotMemoryDir, "themes"));
-            
-            for (const file of themeFiles) {
-                const theme = JSON.parse(fs.readFileSync(path.join(dotMemoryDir, "themes", file), "utf-8")) as ThemeMemory;
-                
-                // Advanced Skill Mining Logic
-                if (theme.semanticIds.length >= config.skills.minThemeFrequency) {
-                    // Gather context for the skill
-                    const context = theme.semanticIds.slice(0, 3).map(sid => {
-                        const sPath = path.join(dotMemoryDir, "semantics", `${sid}.json`);
-                        return fs.existsSync(sPath) ? (JSON.parse(fs.readFileSync(sPath, "utf-8")) as SemanticMemory).content : "";
-                    }).filter(c => c);
+          async execute(_toolCallId: string, params: Static<typeof reflectParamsSchema>): Promise<AgentToolResult<ReflectResult>> {
+            const patterns: ReflectResult["patterns"] = [];
+            const evolutionSuggestions: ReflectResult["evolutionSuggestions"] = [];
 
-                    patterns.push({
-                        themeId: theme.id,
-                        themeName: theme.name,
-                        occurrenceCount: theme.semanticIds.length,
-                        suggestedSkill: `Standard Operating Procedure (SOP) for ${theme.name}`,
-                        context,
-                    });
+            const themes = store.search("", { level: "theme", limit: 100 });
 
-                    // Evolution Logic (Simple Heuristic based on repetition)
-                     if (theme.semanticIds.length > 5) {
-                         evolutionSuggestions.push({
-                             type: "prompt_update" as const,
-                             content: `Add a rule to handle "${theme.name}" explicitly in system prompt.`,
-                             reason: `High frequency theme (${theme.semanticIds.length} occurrences) detected.`,
-                         });
-                     }
+            for (const theme of themes) {
+              const t = theme as ThemeMemory;
+              if (t.semanticIds.length >= config.skills.minThemeFrequency) {
+                patterns.push({
+                  themeId: t.id,
+                  themeName: t.name,
+                  occurrenceCount: t.semanticIds.length,
+                  suggestedSkill: `SOP for ${t.name}`,
+                });
+
+                if (t.semanticIds.length > 5) {
+                  evolutionSuggestions.push({
+                    type: "prompt_update",
+                    content: `Add rule for ${t.name}`,
+                    reason: `High frequency (${t.semanticIds.length} occurrences)`,
+                  });
                 }
+              }
             }
+
             return createToolResult({ patterns, evolutionSuggestions });
           },
         };
@@ -448,13 +343,9 @@ const memoryXPlugin = {
         // Tool 4: memory_introspect
         const introspectParamsSchema = Type.Object({});
         type IntrospectResult = {
-          hierarchy: {
-            originals: number;
-            episodes: number;
-            semantics: number;
-            themes: number;
-          };
+          hierarchy: { originals: number; episodes: number; semantics: number; themes: number };
           health: string;
+          avgRetentionScore: number;
         };
 
         const introspectTool: AgentTool<typeof introspectParamsSchema, IntrospectResult> = {
@@ -462,24 +353,12 @@ const memoryXPlugin = {
           label: "Introspect",
           description: "Get memory system diagnostics",
           parameters: introspectParamsSchema,
-          async execute(
-            _toolCallId: string,
-            _params: Static<typeof introspectParamsSchema>,
-            _signal?: AbortSignal
-          ): Promise<AgentToolResult<IntrospectResult>> {
-            const originals = fs.existsSync(memoryDir) ? fs.readdirSync(memoryDir).length : 0; // Rough count of days
-            const episodes = fs.existsSync(path.join(dotMemoryDir, "episodes")) ? fs.readdirSync(path.join(dotMemoryDir, "episodes")).length : 0;
-            const semantics = fs.existsSync(path.join(dotMemoryDir, "semantics")) ? fs.readdirSync(path.join(dotMemoryDir, "semantics")).length : 0;
-            const themes = fs.existsSync(path.join(dotMemoryDir, "themes")) ? fs.readdirSync(path.join(dotMemoryDir, "themes")).length : 0;
-
+          async execute(): Promise<AgentToolResult<IntrospectResult>> {
+            const stats = store.stats();
             return createToolResult({
-              hierarchy: {
-                originals, // Note: this counts FILES (days), not individual items
-                episodes,
-                semantics,
-                themes,
-              },
+              hierarchy: stats.byLevel,
               health: "healthy",
+              avgRetentionScore: stats.avgRetentionScore,
             });
           },
         };
@@ -489,45 +368,46 @@ const memoryXPlugin = {
           action: Type.Enum({ merge: "merge", split: "split", resolve: "resolve" }),
           targetIds: Type.Array(Type.String()),
         });
-        type ConsolidateResult = { success: boolean };
+
+        type ConsolidateResult = { success: boolean; message: string };
 
         const consolidateTool: AgentTool<typeof consolidateParamsSchema, ConsolidateResult> = {
           name: "memory_consolidate",
           label: "Consolidate",
-          description: "Consolidate memories: merge similar themes, resolve conflicts",
+          description: "Consolidate memories: merge themes, resolve conflicts",
           parameters: consolidateParamsSchema,
-          async execute(
-            _toolCallId: string,
-            params: Static<typeof consolidateParamsSchema>,
-            _signal?: AbortSignal
-          ): Promise<AgentToolResult<ConsolidateResult>> {
+          async execute(_toolCallId: string, params: Static<typeof consolidateParamsSchema>): Promise<AgentToolResult<ConsolidateResult>> {
             const { action, targetIds } = params;
+
             if (action === "merge" && targetIds.length >= 2) {
-               const targetPath = path.join(dotMemoryDir, "themes", `${targetIds[0]}.json`);
-               if (fs.existsSync(targetPath)) {
-                   const targetTheme = JSON.parse(fs.readFileSync(targetPath, "utf-8")) as ThemeMemory;
-                   for (let i = 1; i < targetIds.length; i++) {
-                       const sourcePath = path.join(dotMemoryDir, "themes", `${targetIds[i]}.json`);
-                       if (fs.existsSync(sourcePath)) {
-                           const sourceTheme = JSON.parse(fs.readFileSync(sourcePath, "utf-8")) as ThemeMemory;
-                           targetTheme.semanticIds.push(...sourceTheme.semanticIds);
-                           fs.unlinkSync(sourcePath);
-                       }
-                   }
-                   fs.writeFileSync(targetPath, JSON.stringify(targetTheme, null, 2));
-               }
+              const targetTheme = store.get<ThemeMemory>(targetIds[0], "theme");
+              if (!targetTheme) {
+                return createToolResult({ success: false, message: "Target theme not found" });
+              }
+
+              store.transaction(() => {
+                for (let i = 1; i < targetIds.length; i++) {
+                  const sourceTheme = store.get<ThemeMemory>(targetIds[i], "theme");
+                  if (sourceTheme) {
+                    targetTheme.semanticIds.push(...sourceTheme.semanticIds);
+                    store.delete(sourceTheme.id);
+                  }
+                }
+                store.save(targetTheme);
+              });
+
+              return createToolResult({ success: true, message: `Merged ${targetIds.length - 1} themes` });
             }
-            return createToolResult({ success: true });
+
+            return createToolResult({ success: false, message: "Action not implemented" });
           },
         };
 
         // Tool 6: memory_status
         const statusParamsSchema = Type.Object({});
         type StatusResult = {
-          stats: {
-            totalMemories: number;
-            themeDistribution: Record<string, number>;
-          };
+          stats: { totalMemories: number; themeDistribution: Record<string, number> };
+          forgetting: { nextRun: string; candidatesForArchive: number };
         };
 
         const statusTool: AgentTool<typeof statusParamsSchema, StatusResult> = {
@@ -535,24 +415,23 @@ const memoryXPlugin = {
           label: "Status",
           description: "Get memory system statistics",
           parameters: statusParamsSchema,
-          async execute(
-            _toolCallId: string,
-            _params: Static<typeof statusParamsSchema>,
-            _signal?: AbortSignal
-          ): Promise<AgentToolResult<StatusResult>> {
+          async execute(): Promise<AgentToolResult<StatusResult>> {
+            const stats = store.stats();
             const themeDistribution: Record<string, number> = {};
-            if (fs.existsSync(path.join(dotMemoryDir, "themes"))) {
-                const themeFiles = fs.readdirSync(path.join(dotMemoryDir, "themes"));
-                for (const file of themeFiles) {
-                    const t = JSON.parse(fs.readFileSync(path.join(dotMemoryDir, "themes", file), "utf-8")) as ThemeMemory;
-                    themeDistribution[t.name] = t.semanticIds.length;
-                }
+
+            const themes = store.search("", { level: "theme", limit: 100 });
+            for (const theme of themes) {
+              const t = theme as ThemeMemory;
+              themeDistribution[t.name] = t.semanticIds.length;
             }
-            const count = fs.existsSync(path.join(dotMemoryDir, "semantics")) ? fs.readdirSync(path.join(dotMemoryDir, "semantics")).length : 0;
+
+            const forgettingStats = forgetting.getStats();
+
             return createToolResult({
-              stats: {
-                totalMemories: count, // Using semantic count as proxy for total items
-                themeDistribution,
+              stats: { totalMemories: stats.total, themeDistribution },
+              forgetting: {
+                nextRun: new Date(Date.now() + 3600000).toISOString(),
+                candidatesForArchive: forgettingStats.candidatesForArchive,
               },
             });
           },
@@ -564,75 +443,72 @@ const memoryXPlugin = {
           content: Type.String(),
           reason: Type.String(),
         });
+
         type EvolveResult = { success: boolean; path: string };
 
         const evolveTool: AgentTool<typeof evolveParamsSchema, EvolveResult> = {
           name: "memory_evolve",
           label: "Evolve",
-          description: "Self-modify behavior by updating META.md with new rules or SOPs",
+          description: "Self-modify behavior by updating META.md",
           parameters: evolveParamsSchema,
-          async execute(
-            _toolCallId: string,
-            params: Static<typeof evolveParamsSchema>,
-            _signal?: AbortSignal
-          ): Promise<AgentToolResult<EvolveResult>> {
+          async execute(_toolCallId: string, params: Static<typeof evolveParamsSchema>): Promise<AgentToolResult<EvolveResult>> {
             const metaPath = path.join(memoryDir, "META.md");
-            // Create if missing
             if (!fs.existsSync(metaPath)) {
-                fs.writeFileSync(metaPath, "# META.md - Self-Evolution & Rules\n\n## 🛡️ Core Rules\n\n## 📘 Standard Operating Procedures (SOPs)\n\n");
-            }
-            
-            const timestamp = new Date().toLocaleDateString();
-            let entry = "";
-            
-            if (params.action === "add_rule") {
-                entry = `\n- [${timestamp}] ${params.content} <!-- Reason: ${params.reason} -->`;
-                // Append to Core Rules section (Simple string manipulation for MVP)
-                // Ideally use AST or robust parser. Here we just append to file end or specific marker if possible.
-                // For safety, we just append to the file now.
-                fs.appendFileSync(metaPath, entry);
-            } else if (params.action === "add_sop") {
-                entry = `\n### [SOP-${Date.now()}] ${params.reason}\n${params.content}\n`;
-                fs.appendFileSync(metaPath, entry);
+              fs.writeFileSync(metaPath, "# META.md - Self-Evolution\n\n## Rules\n\n## SOPs\n\n");
             }
 
-            logger.info(`Memory evolved: ${params.action}`);
+            const timestamp = new Date().toISOString();
+            let entry = "";
+
+            if (params.action === "add_rule") {
+              entry = `\n- [${timestamp}] ${params.content} <!-- ${params.reason} -->`;
+            } else {
+              entry = `\n### SOP: ${params.reason}\n${params.content}\n`;
+            }
+
+            fs.appendFileSync(metaPath, entry);
+            logger.info(`[Memory-X] Memory evolved: ${params.action}`);
+
             return createToolResult({ success: true, path: metaPath });
           },
         };
 
-        // --- Background Auto-Reflection Loop ---
-        if (config.autoReflection?.enabled) {
-            const intervalMs = (config.autoReflection.intervalMinutes || 60) * 60 * 1000;
-            logger.info(`[Memory-X] Auto-reflection enabled. Interval: ${config.autoReflection.intervalMinutes}m`);
-            
-            setInterval(async () => {
-                logger.info("[Memory-X] Running background reflection...");
-                try {
-                    // 1. Reflect
-                    const reflectResult = await reflectTool.execute("auto-reflect", { focus: "skills" });
-                    const suggestions = reflectResult.details.evolutionSuggestions || [];
-                    
-                    // 2. Auto-Evolve (if high confidence)
-                    // Note: For safety, we might only want to LOG suggestions or auto-apply very specific ones.
-                    // For OAMC "Self-Evolution" demo, we will auto-apply high-confidence updates.
-                    
-                    for (const suggestion of suggestions) {
-                        logger.info(`[Memory-X] Auto-applying suggestion: ${suggestion.type}`);
-                        if (suggestion.type === "prompt_update" || suggestion.type === "new_rule") {
-                             await evolveTool.execute("auto-evolve", {
-                                 action: "add_rule",
-                                 content: suggestion.content,
-                                 reason: suggestion.reason + " (Auto-detected)"
-                             });
-                        }
-                        // We skip auto-SOP creation as it usually requires complex content generation not fully present in suggestion object yet.
-                    }
-                } catch (e) {
-                    logger.error(`[Memory-X] Auto-reflection failed: ${e}`);
-                }
-            }, intervalMs);
-        }
+        // Tool 8: memory_forget (New)
+        const forgetParamsSchema = Type.Object({
+          action: Type.Enum({ archive: "archive", cleanup: "cleanup", stats: "stats" }),
+          threshold: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })),
+        });
+
+        type ForgetResult = { archived: number; deleted: number; retained: number };
+
+        const forgetTool: AgentTool<typeof forgetParamsSchema, ForgetResult> = {
+          name: "memory_forget",
+          label: "Forget",
+          description: "Manage memory lifecycle: archive low-value memories",
+          parameters: forgetParamsSchema,
+          async execute(_toolCallId: string, params: Static<typeof forgetParamsSchema>): Promise<AgentToolResult<ForgetResult>> {
+            const { action, threshold = 0.3 } = params;
+
+            if (action === "archive") {
+              const result = forgetting.archiveLowValue(threshold);
+              return createToolResult(result);
+            } else if (action === "cleanup") {
+              const result = forgetting.cleanup();
+              return createToolResult(result);
+            } else {
+              const stats = forgetting.getStats();
+              return createToolResult({ archived: stats.archived, deleted: stats.deleted, retained: stats.retained });
+            }
+          },
+        };
+
+        // Background auto-forgetting
+        setInterval(() => {
+          const result = forgetting.archiveLowValue(0.2);
+          if (result.archived > 0 || result.deleted > 0) {
+            logger.info(`[Memory-X] Auto-forget: archived ${result.archived}, deleted ${result.deleted}`);
+          }
+        }, 24 * 60 * 60 * 1000); // Daily
 
         return [
           rememberTool,
@@ -642,16 +518,40 @@ const memoryXPlugin = {
           consolidateTool,
           statusTool,
           evolveTool,
+          forgetTool,
         ];
       },
-      // Tools are now exposed globally by the plugin, but logically belong to the 'memory-core' skill.
-      // The 'openclaw.plugin.json' "skills" entry ensures the Skill metadata is loaded.
-      // The tools registered here will be available to the agent.
-      { names: ["memory_remember", "memory_recall", "memory_reflect", "memory_introspect", "memory_consolidate", "memory_status", "memory_evolve"] }
+      { names: ["memory_remember", "memory_recall", "memory_reflect", "memory_introspect", "memory_consolidate", "memory_status", "memory_evolve", "memory_forget"] }
     );
 
-    logger.info("Memory-X plugin registered");
+    logger.info("[Memory-X] Plugin registered with SQLite storage");
   },
 };
+
+function findOrCreateTheme(semantic: SemanticMemory, store: SQLiteMemoryStore): ThemeMemory {
+  for (const entity of semantic.entityRefs) {
+    const themes = store.search(entity, { level: "theme", limit: 1 });
+    if (themes.length > 0) {
+      const theme = themes[0] as ThemeMemory;
+      theme.semanticIds.push(semantic.id);
+      theme.updatedAt = Date.now();
+      store.save(theme);
+      return theme;
+    }
+  }
+
+  const themeName = semantic.entityRefs[0] || `Theme-${Date.now()}`;
+  const theme: ThemeMemory = {
+    id: `theme-${Date.now()}`,
+    name: themeName,
+    description: `Theme for ${themeName}`,
+    semanticIds: [semantic.id],
+    coherenceScore: semantic.confidence,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  };
+  store.save(theme);
+  return theme;
+}
 
 export default memoryXPlugin;

@@ -1,0 +1,13 @@
+{
+  "id": "sem-1770794690312",
+  "content": "When writing the paper, use the 'article' class with 12pt font.",
+  "type": "fact",
+  "confidence": 0.95,
+  "sourceEpisodes": [
+    "ep-1770794690312"
+  ],
+  "entityRefs": [
+    "LaTeX",
+    "Academic Writing"
+  ]
+}

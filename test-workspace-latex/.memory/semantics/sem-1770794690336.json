@@ -1,0 +1,13 @@
+{
+  "id": "sem-1770794690336",
+  "content": "Abstract should be no more than 200 words and placed before the introduction.",
+  "type": "fact",
+  "confidence": 0.95,
+  "sourceEpisodes": [
+    "ep-1770794690336"
+  ],
+  "entityRefs": [
+    "Academic Writing",
+    "Abstract"
+  ]
+}

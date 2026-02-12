@@ -1,0 +1,13 @@
+{
+  "id": "sem-1770794690335",
+  "content": "Ensure all equations are numbered using the 'equation' environment.",
+  "type": "fact",
+  "confidence": 0.95,
+  "sourceEpisodes": [
+    "ep-1770794690335"
+  ],
+  "entityRefs": [
+    "LaTeX",
+    "Equations"
+  ]
+}

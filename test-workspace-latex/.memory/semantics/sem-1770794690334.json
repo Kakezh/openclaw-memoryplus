@@ -1,0 +1,13 @@
+{
+  "id": "sem-1770794690334",
+  "content": "References must be in BibTeX format using the 'plainnat' style.",
+  "type": "fact",
+  "confidence": 0.95,
+  "sourceEpisodes": [
+    "ep-1770794690334"
+  ],
+  "entityRefs": [
+    "LaTeX",
+    "BibTeX"
+  ]
+}
