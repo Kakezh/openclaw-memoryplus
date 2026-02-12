@@ -17,7 +17,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Kakezh/memory-x"
+    "url": "git+https://github.com/Kakezh/memory-x.git"
   },
   "bugs": {
     "url": "https://github.com/Kakezh/memory-x/issues"
@@ -94,5 +94,9 @@
     "splitting": false,
     "sourcemap": true,
     "clean": true
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   }
 }
