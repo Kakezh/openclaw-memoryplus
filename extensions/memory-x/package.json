@@ -1,58 +1,98 @@
 {
-  "name": "@openclaw/memory-x",
-  "version": "2026.2.3",
-  "description": "Unified hierarchical memory system based on xMemory and Memory Taxonomy",
+  "name": "@kakezh/memory-x",
+  "version": "1.0.0",
+  "description": "Framework-agnostic hierarchical memory system for AI agents. Works with OpenClaw, LangChain, or standalone.",
   "type": "module",
   "keywords": [
-    "openclaw",
     "memory",
     "agent",
     "ai",
-    "hierarchy",
-    "knowledge-graph"
+    "hierarchical",
+    "knowledge-graph",
+    "framework-agnostic",
+    "openclaw",
+    "langchain"
   ],
   "author": "Kakezh",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Kakezh/openclaw-memoryplus"
+    "url": "https://github.com/Kakezh/memory-x"
+  },
+  "bugs": {
+    "url": "https://github.com/Kakezh/memory-x/issues"
+  },
+  "homepage": "https://github.com/Kakezh/memory-x#readme",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./core": {
+      "types": "./dist/core/index.d.ts",
+      "import": "./dist/core/index.js"
+    },
+    "./adapters/generic": {
+      "types": "./dist/adapters/generic.d.ts",
+      "import": "./dist/adapters/generic.js"
+    },
+    "./adapters/openclaw": {
+      "types": "./dist/adapters/openclaw.d.ts",
+      "import": "./dist/adapters/openclaw.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "prepublishOnly": "pnpm build",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
-    "@sinclair/typebox": "0.34.48",
     "sql.js": "^1.10.3"
   },
   "optionalDependencies": {
     "better-sqlite3": "^11.0.0"
   },
-  "devDependencies": {
-    "@types/better-sqlite3": "^7.6.11",
-    "openclaw": "workspace:*",
-    "tsup": "^8.5.1",
-    "typescript": "^5.9.3"
-  },
   "peerDependencies": {
+    "@langchain/core": ">=0.1.0",
     "openclaw": ">=2026.1.26"
   },
-  "files": [
-    "dist",
-    "skills",
-    "openclaw.plugin.json"
-  ],
-  "main": "./dist/index.js",
-  "exports": {
-    ".": "./dist/index.js",
-    "./store": "./dist/store/index.js",
-    "./types": "./dist/types.js"
+  "peerDependenciesMeta": {
+    "@langchain/core": {
+      "optional": true
+    },
+    "openclaw": {
+      "optional": true
+    }
   },
-  "scripts": {
-    "build": "tsup index.ts --format esm --dts --out-dir dist",
-    "prepack": "pnpm build"
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^20.10.0",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
+    "vitest": "^1.0.0"
   },
-  "openclaw": {
-    "extensions": [
-      "./dist/index.js"
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "tsup": {
+    "entry": [
+      "index.ts",
+      "core/index.ts",
+      "adapters/generic.ts",
+      "adapters/openclaw.ts"
     ],
-    "hotReload": true,
-    "minVersion": "2026.1.26"
+    "format": "esm",
+    "dts": true,
+    "splitting": false,
+    "sourcemap": true,
+    "clean": true
   }
 }
