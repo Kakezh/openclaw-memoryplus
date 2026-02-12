@@ -27,6 +27,8 @@ import { SQLiteMemoryStore } from "./store/sqlite-store.js";
 import { VectorIndex, SimpleEmbeddingProvider } from "./store/vector-index.js";
 import { ForgettingMechanism } from "./dynamics/forgetting.js";
 import { ConflictDetector } from "./dynamics/conflict.js";
+import { KnowledgeGraph } from "./reasoning/knowledge-graph.js";
+import { MultiHopReasoning } from "./reasoning/multi-hop.js";
 
 type TextContent = { type: "text"; text: string };
 
@@ -111,6 +113,8 @@ const memoryXPlugin = {
         const vectorIndex = new VectorIndex(store, new SimpleEmbeddingProvider());
         const forgetting = new ForgettingMechanism(store);
         const conflictDetector = new ConflictDetector(store, vectorIndex);
+        const knowledgeGraph = new KnowledgeGraph(store);
+        const reasoning = new MultiHopReasoning(store, vectorIndex, knowledgeGraph);
 
         logger.info(`[Memory-X] SQLite store initialized at: ${store.getPath()}`);
 
@@ -510,6 +514,131 @@ const memoryXPlugin = {
           }
         }, 24 * 60 * 60 * 1000); // Daily
 
+        // Tool 9: memory_reason (P2 - Multi-hop reasoning)
+        const reasonParamsSchema = Type.Object({
+          query: Type.String(),
+          maxHops: Type.Optional(Type.Number({ minimum: 1, maximum: 5, default: 3 })),
+        });
+
+        type ReasonResult = {
+          query: string;
+          answer: string;
+          steps: { type: string; input: string; output: string; confidence: number }[];
+          confidence: number;
+          entityCount: number;
+          pathCount: number;
+        };
+
+        const reasonTool: AgentTool<typeof reasonParamsSchema, ReasonResult> = {
+          name: "memory_reason",
+          label: "Reason",
+          description: "Multi-hop reasoning across memory hierarchy with knowledge graph",
+          parameters: reasonParamsSchema,
+          async execute(_toolCallId: string, params: Static<typeof reasonParamsSchema>): Promise<AgentToolResult<ReasonResult>> {
+            try {
+              const result = await reasoning.reason(params.query, params.maxHops || 3);
+              
+              return createToolResult({
+                query: result.query,
+                answer: result.answer,
+                steps: result.steps.map((s) => ({
+                  type: s.type,
+                  input: s.input,
+                  output: s.output,
+                  confidence: s.confidence,
+                })),
+                confidence: result.confidence,
+                entityCount: knowledgeGraph.getAllEntities().length,
+                pathCount: result.paths.length,
+              });
+            } catch (error) {
+              logger.error(`[Memory-X] Reasoning failed: ${error}`);
+              throw error;
+            }
+          },
+        };
+
+        // Tool 10: memory_graph (P2 - Knowledge graph operations)
+        const graphParamsSchema = Type.Object({
+          action: Type.Enum({ stats: "stats", entity: "entity", path: "path", related: "related" }),
+          entity: Type.Optional(Type.String()),
+          target: Type.Optional(Type.String()),
+        });
+
+        type GraphResult = {
+          action: string;
+          result: Record<string, any>;
+        };
+
+        const graphTool: AgentTool<typeof graphParamsSchema, GraphResult> = {
+          name: "memory_graph",
+          label: "Graph",
+          description: "Query and explore the knowledge graph",
+          parameters: graphParamsSchema,
+          async execute(_toolCallId: string, params: Static<typeof graphParamsSchema>): Promise<AgentToolResult<GraphResult>> {
+            const { action, entity, target } = params;
+
+            switch (action) {
+              case "stats":
+                return createToolResult({
+                  action: "stats",
+                  result: knowledgeGraph.getStats(),
+                });
+
+              case "entity":
+                if (!entity) {
+                  return createToolResult({
+                    action: "entity",
+                    result: { error: "Entity name required" },
+                  });
+                }
+                const foundEntity = knowledgeGraph.getEntity(entity);
+                const relations = foundEntity ? knowledgeGraph.getEntityRelations(foundEntity.id) : [];
+                return createToolResult({
+                  action: "entity",
+                  result: { entity: foundEntity, relations: relations.length },
+                });
+
+              case "path":
+                if (!entity || !target) {
+                  return createToolResult({
+                    action: "path",
+                    result: { error: "Source and target entity names required" },
+                  });
+                }
+                const path = knowledgeGraph.findPath(entity, target);
+                return createToolResult({
+                  action: "path",
+                  result: path ? {
+                    nodes: path.nodes.map((n) => n.name),
+                    edges: path.edges.map((e) => e.type),
+                    weight: path.totalWeight,
+                  } : null,
+                });
+
+              case "related":
+                if (!entity) {
+                  return createToolResult({
+                    action: "related",
+                    result: { error: "Entity name required" },
+                  });
+                }
+                const sourceEntity = knowledgeGraph.getEntity(entity);
+                const related = sourceEntity ? knowledgeGraph.getRelatedEntities(sourceEntity.id) : [];
+                return createToolResult({
+                  action: "related",
+                  result: { entities: related.map((e) => e.name) },
+                });
+
+              default:
+                return createToolResult({
+                  action: "unknown",
+                  result: { error: "Unknown action" },
+                });
+            }
+          },
+        };
+
         return [
           rememberTool,
           recallTool,
@@ -519,9 +648,11 @@ const memoryXPlugin = {
           statusTool,
           evolveTool,
           forgetTool,
+          reasonTool,
+          graphTool,
         ];
       },
-      { names: ["memory_remember", "memory_recall", "memory_reflect", "memory_introspect", "memory_consolidate", "memory_status", "memory_evolve", "memory_forget"] }
+      { names: ["memory_remember", "memory_recall", "memory_reflect", "memory_introspect", "memory_consolidate", "memory_status", "memory_evolve", "memory_forget", "memory_reason", "memory_graph"] }
     );
 
     logger.info("[Memory-X] Plugin registered with SQLite storage");
