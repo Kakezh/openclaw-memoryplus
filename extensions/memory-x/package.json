@@ -17,12 +17,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Kakezh/memory-x.git"
+    "url": "git+https://github.com/Kakezh/openclaw-memoryplus.git"
   },
   "bugs": {
-    "url": "https://github.com/Kakezh/memory-x/issues"
+    "url": "https://github.com/Kakezh/openclaw-memoryplus/issues"
   },
-  "homepage": "https://github.com/Kakezh/memory-x#readme",
+  "homepage": "https://github.com/Kakezh/openclaw-memoryplus#readme",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -97,6 +97,6 @@
   },
   "publishConfig": {
     "access": "public",
-    "registry": "https://registry.npmjs.org/"
+    "registry": "https://npm.pkg.github.com"
   }
 }
