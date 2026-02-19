@@ -52,7 +52,8 @@
     "build": "tsup",
     "prepublishOnly": "pnpm build",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "bench": "npx tsx bench/index.ts"
   },
   "dependencies": {
     "sql.js": "^1.10.3"
@@ -75,6 +76,7 @@
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.11",
     "@types/node": "^20.10.0",
+    "ts-node": "^10.9.2",
     "tsup": "^8.5.1",
     "typescript": "^5.9.3",
     "vitest": "^1.0.0"

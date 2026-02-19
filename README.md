@@ -551,6 +551,44 @@ The following metrics are based on the [xMemory research paper](https://arxiv.or
 | QA Accuracy | +10% | Improvement vs RAG baseline with evidence density scoring |
 | Evidence Density | 2× | Higher relevance vs simple top-k retrieval |
 
+### Measured Performance (Benchmark Results)
+
+The following metrics are from actual benchmark tests run on:
+
+| Environment | Value |
+|-------------|-------|
+| Platform | Linux x64 |
+| Node.js | v22.22.0 |
+| CPU Cores | 16 |
+| Total RAM | 6.70 GB |
+
+#### Storage Performance
+
+| Operation | Mean | P50 | P95 | P99 |
+|-----------|------|-----|-----|-----|
+| Single Write | 49.02 µs | 14.55 µs | 103.38 µs | 1.50 ms |
+| Batch Write (100) | 1.14 ms | 635.42 µs | 3.24 ms | 3.24 ms |
+| Search (100 memories) | 6.25 µs | 2.64 µs | 9.99 µs | 131.48 µs |
+| Search (500 memories) | 3.86 µs | 3.09 µs | 8.14 µs | 10.87 µs |
+| Search (1000 memories) | 9.46 µs | 7.61 µs | 13.82 µs | 49.75 µs |
+| Search (5000 memories) | 57.19 µs | 38.83 µs | 79.34 µs | 803.95 µs |
+
+#### Hierarchy Operations
+
+| Operation | Mean | P50 | P95 | Grade |
+|-----------|------|-----|-----|-------|
+| Remember (4-level) | 7.13 µs | 6.58 µs | 11.41 µs | 🟢 Excellent |
+| Recall (500 memories) | 5.26 µs | 4.63 µs | 8.46 µs | 🟢 Excellent |
+| Reflect (100 memories) | 30.60 µs | 1.98 µs | 341.47 µs | 🟢 Excellent |
+| Stats (1000 memories) | 3.14 µs | 3.02 µs | 3.42 µs | 🟢 Excellent |
+
+#### Memory Overhead
+
+| Metric | Value |
+|--------|-------|
+| Per Memory Overhead | ~882 B |
+| 1000 Memories | ~861 KB |
+
 ### Implementation Characteristics
 
 | Aspect | Description |
@@ -559,14 +597,14 @@ The following metrics are based on the [xMemory research paper](https://arxiv.or
 | Search | Keyword-based with vector similarity (when embedding provider configured) |
 | Memory Model | 4-level hierarchy with automatic classification |
 
-> ⚠️ **Note**: Actual performance depends on your specific use case, data volume, and hardware. We recommend running your own benchmarks for production deployments.
-
 ### Running Benchmarks
 
 ```bash
-# TODO: Add benchmark scripts
-# pnpm bench
+cd extensions/memory-x
+pnpm bench
 ```
+
+Results are saved to `bench/results.json`.
 
 ---
 
